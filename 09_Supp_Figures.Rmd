@@ -1,0 +1,557 @@
+---
+title: "Supplemental Figures"
+author: "Sonali Arora, Hamid Bolouri"
+date: "October 1, 2018"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+## Introduction
+
+In this vignette, we calculate various Supplemental Figures, as seen in our Paper.
+
+## Pairwise PCA Plots for individual TCGA and GTEx data 
+
+```{r}
+rm(list=ls())
+
+library(grid)
+library(gridExtra)
+library(ggplot2)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+if(!file.exists( file.path( git_dir, "data","pca_data"))){
+  stop("Please go through vignette 5 & 6 to calculate PCA or clone from github")
+}
+if(!file.exists( file.path( results_dir))){
+   system(paste0("mkdir ", results_dir))
+}
+if(!file.exists( file.path( results_dir, "pdf"))){
+   system(paste0("mkdir ", file.path(results_dir, "pdf")))
+}
+
+tcga_col_lst = c( 
+  "Piccolo"= "#E76BF3",
+  "MSKCC" = "darkblue",
+  "MSKCC Batch" ="#00B0F6" ,
+  Recount2 ="grey45" ,
+  "Xena" = "orange",
+  "GDC" ="#A3A500")
+
+gtex_col_lst = c( 
+  "MSKCC" = "darkblue",
+  "MSKCC Batch" ="#00B0F6" ,
+  Recount2 ="grey45" ,
+  "XENA" = "orange",
+  "GTEx" ="darkgreen")
+
+
+s1 = 3 # size for points in PCA plot
+legend_pt_size =4
+plot_title_size = 25
+axis_text_size = 25
+axis_title_size=25
+legend_text_size=20
+spacing=0.3
+chosen_margin = c(0.5,1,0.5,1)# margins:top,right,bottom,left
+
+
+tcga_fls1 = c( 
+  file.path(git_dir, "data","pca_data", "Supp_Fig1_PCA_Data_GDC_vs_XENA_Toil_TPM.txt"),
+  file.path(git_dir,"data","pca_data", "Supp_Fig1_PCA_Data_GDC_vs_Piccolo_Lab_TPM.txt")  ,
+  file.path(git_dir,"data","pca_data", "Supp_Fig1_PCA_Data_GDC_vs_Recount2_TPM.txt"),
+  file.path(git_dir,"data","pca_data", "Supp_Fig1_PCA_Data_GDC_vs_MSKCC_Norm_TPM.txt") ,
+  file.path(git_dir,"data","pca_data", "Supp_Fig1_PCA_Data_GDC_vs_MSKCC_BATCH_TPM.txt")  )
+
+gtex_fls1 = c( file.path(git_dir,"data","pca_data", "Supp_Fig1_PCA_Data_Gtex_v6_vs_XENA_Toil_TPM.txt"),
+ file.path(git_dir,"data","pca_data", "Supp_Fig1_PCA_Data_Gtex_v6_vs_Recount2_TPM.txt") ,
+ file.path(git_dir,"data","pca_data", "Supp_Fig1_PCA_Data_Gtex_v6_vs_MSKCC_Norm_TPM.txt"),
+ file.path(git_dir,"data","pca_data", "Supp_Fig1_PCA_Data_Gtex_v6_vs_MSKCC_BATCH_TPM.txt" ))
+
+percentVar_fls = c( 
+  file.path(git_dir,"data","pca_data", "percentVar_GDC_vs_XENA_Toil_TPM.txt"),
+  file.path(git_dir,"data","pca_data", "percentVar_GDC_vs_Piccolo_Lab_TPM.txt")  ,
+  file.path(git_dir,"data","pca_data", "percentVar_GDC_vs_Recount2_TPM.txt"),
+  file.path(git_dir,"data","pca_data", "percentVar_GDC_vs_MSKCC_Norm_TPM.txt"),
+  file.path(git_dir,"data","pca_data", "percentVar_GDC_vs_MSKCC_BATCH_TPM.txt"))
+
+gtex_percentVar_list = c(
+  file.path(git_dir,"data","pca_data", "percentVar_Gtex_vs_XENA_Toil_TPM.txt"), 
+  file.path(git_dir,"data","pca_data", "percentVar_Gtex_vs_Recount2_TPM.txt"), 
+  file.path(git_dir,"data","pca_data", "percentVar_Gtex_vs_MSKCC_Norm_TPM.txt"), 
+  file.path(git_dir,"data","pca_data", "percentVar_Gtex_vs_MSKCC_BATCH_TPM.txt"))
+
+tcga_res = mapply(function(x,y){
+  pc_data1 = read.delim(x, header=T, stringsAsFactors=FALSE)
+  pc_data1$Project[which(pc_data1$Project=="Piccolo_Lab")]="Piccolo"
+  pc_data1$Project[which(pc_data1$Project=="XENA_Toil")]="Xena"
+  pc_data1$Project[which(pc_data1$Project=="MSKCC_Norm")]="MSKCC"
+  pc_data1$Project[which(pc_data1$Project=="MSKCC_BATCH")]="MSKCC Batch"
+  pc_data1$Project[which(pc_data1$Project=="TCGA-GDCData")]="GDC"
+
+  other_title = setdiff(unique(pc_data1$Project), "GDC")
+  other_color = as.character(tcga_col_lst[other_title])
+  gdc_color = as.character(tcga_col_lst["GDC"])
+  pc_data1$Project = factor(pc_data1$Project,
+                            levels= c("GDC", other_title))
+  
+  percentVar = read.delim( y, header=FALSE, stringsAsFactors = FALSE)[,1]
+  
+  p1 = ggplot(pc_data1, aes(PC1, PC2, color=Project)) +
+    geom_point(size=s1, shape=21, alpha=0.5) +
+    xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+    ylab(paste0("PC2: ",percentVar[2],"% variance")) +
+    scale_color_manual(name="Project",
+                       breaks=levels(pc_data1[,"Project"]),
+                       values=c(gdc_color , other_color)) 
+  p1
+}, x= tcga_fls1, y = percentVar_fls, SIMPLIFY = FALSE)
+
+
+#  make GTEx pairwise PCA plots
+
+
+gtex_res = mapply(function(x, y){
+  pc_data1 = read.delim(x, header=T, stringsAsFactors=FALSE)
+
+  pc_data1$Project = gsub("Xena-Toil", "XENA", pc_data1$Project)
+
+  pc_data1$Project[which(pc_data1$Project=="XENA_Toil")]="XENA"
+  pc_data1$Project[which(pc_data1$Project=="MSKCC_Norm")]="MSKCC"
+  pc_data1$Project[which(pc_data1$Project=="MSKCC_BATCH")]="MSKCC Batch"
+  pc_data1$Project[which(pc_data1$Project=="GTEX-V6")]="GTEx"
+
+  other_title = setdiff(unique(pc_data1$Project), "GTEx")
+  other_color = as.character(gtex_col_lst[other_title])
+  gtex_color = as.character(gtex_col_lst["GTEx"])
+  pc_data1$Project = factor(pc_data1$Project,
+                            levels= c("GTEx", other_title))
+  percentVar = read.delim( y, header=FALSE, stringsAsFactors = FALSE)[,1]
+  p1 = ggplot(pc_data1, aes(PC1, PC2, color=Project)) +
+    geom_point(size=s1, shape=21, alpha=0.5) +
+    xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+    ylab(paste0("PC2: ",percentVar[2],"% variance")) +
+    scale_color_manual(name="Project",
+                       breaks=levels(pc_data1[,"Project"]),
+                       values=c(gtex_color , other_color)) 
+  p1
+}, x=gtex_fls1, y=gtex_percentVar_list, SIMPLIFY = FALSE)
+
+
+theme_hb <- theme_bw(base_family="Helvetica") +
+  theme(plot.title = element_text(hjust=0, vjust=0, 
+                        lineheight=.8, face="bold", size=plot_title_size ),
+  plot.margin=unit(chosen_margin,"cm"), 
+  axis.text=element_text(size=axis_text_size),
+  axis.title=element_text(size=axis_title_size),
+  legend.text=element_text(size=legend_text_size),
+  legend.key.height = unit(spacing, "cm"),
+  legend.position = "bottom",
+  legend.title=element_blank() )
+
+tcga_p1 = tcga_res[[1]] + theme_hb + ggtitle("a ") + 
+  guides( color = guide_legend(override.aes =
+            list(alpha = 1, size=legend_pt_size, shape=16, ncol=3)))
+
+tcga_p2 = tcga_res[[2]] + theme_hb + ggtitle("b ") + 
+  guides( color = guide_legend(override.aes =
+            list(alpha = 1, size=legend_pt_size, shape=16, ncol=3)))
+
+tcga_p3 = tcga_res[[3]] + theme_hb + ggtitle("c ") + 
+  guides( color = guide_legend(override.aes =
+            list(alpha = 1, size=legend_pt_size, shape=16, ncol=3)))
+
+tcga_p4 = tcga_res[[4]] + theme_hb + ggtitle("d ") + 
+  guides( color = guide_legend(override.aes =
+            list(alpha = 1, size=legend_pt_size, shape=16, ncol=3)))
+
+tcga_p5 = tcga_res[[5]] + theme_hb + ggtitle("e ") + 
+  guides( color = guide_legend(override.aes =
+            list(alpha = 1, size=legend_pt_size, shape=16, ncol=3)))
+
+gtex_p1 = gtex_res[[1]] + theme_hb + ggtitle("a ") + 
+  guides( color = guide_legend(override.aes =
+            list(alpha = 1, size=legend_pt_size, shape=16, ncol=3)))
+
+gtex_p2 = gtex_res[[2]] + theme_hb + ggtitle("b ") + 
+  guides( color = guide_legend(override.aes =
+            list(alpha = 1, size=legend_pt_size, shape=16, ncol=3)))
+
+gtex_p3 = gtex_res[[3]] + theme_hb + ggtitle("c ") + 
+  guides( color = guide_legend(override.aes =
+            list(alpha = 1, size=legend_pt_size, shape=16, ncol=3)))
+
+gtex_p4 = gtex_res[[4]] + theme_hb + ggtitle("d ") + 
+  guides( color = guide_legend(override.aes =
+            list(alpha = 1, size=legend_pt_size, shape=16, ncol=3)))
+
+tex <- textGrob("")
+
+# arrange and make final figure.
+pdf(file.path( results_dir, "pdf", "Supp_Fig1_pairwise_TCGA_pca_plots.pdf"), 
+    width = 24, height =16)
+tcga_plot <- list(tcga_p1, tcga_p2, tcga_p3, tcga_p4, tcga_p5, tex )
+layout = rbind( c(1, 2, 3), c(4, 5, 6))
+marrangeGrob(tcga_plot,  layout_matrix = layout,
+                    top =textGrob("") )
+dev.off()
+
+pdf(file.path( results_dir, "pdf", "Supp_Fig2_pairwise_GTEx_pca_plots.pdf"), 
+    width = 24, height =16)
+gtex_plot <- list(gtex_p1, gtex_p2, gtex_p3, gtex_p4,  tex )
+layout = rbind( c(1, 2, 3), c(4, 5, 5))
+marrangeGrob(gtex_plot, layout_matrix = layout,
+                    top= textGrob(""))
+dev.off()
+```
+
+## Pairwise expression plots for NPM1, IL3RA, OVCA2 and CEBPA
+
+```{r}
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(SummarizedExperiment)
+  library(Hmisc)
+  library(ggplot2)
+  library(pheatmap)
+  library(RColorBrewer)
+  library(grid)
+  library(gridExtra)
+})
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+
+if(!file.exists(file.path( s3_dir, "SE_objects"))){
+  stop("Please go through vignette 3 & 4 to make SE objects or download from S3 bucket")
+}
+
+tcga_gdc <- get(load( file.path( s3_dir, "SE_objects","tcga_gdc_log2_TPM.RData")))
+tcga_mskcc_norm <- get(load( file.path( s3_dir, "SE_objects", "tcga_mskcc_norm_log2_TPM.RData")))
+tcga_mskcc_batch <- get(load( file.path( s3_dir, "SE_objects", "tcga_mskcc_batch_log2_TPM.RData")))
+tcga_recount2 <- get(load( file.path( s3_dir, "SE_objects", "tcga_recount2_log2_TPM.RData")))
+tcga_xena <- get(load( file.path( s3_dir, "SE_objects", "tcga_xena_log2_TPM.RData")))
+tcga_piccolo <- get(load( file.path( s3_dir, "SE_objects","tcga_piccolo_log2_TPM.RData")))
+
+geneName = rownames(tcga_gdc)
+
+gdc_mat = assay(tcga_gdc)
+mskcc_norm_mat=assay(tcga_mskcc_norm)
+mskcc_batch_mat=assay(tcga_mskcc_batch)
+piccolo_mat=assay(tcga_piccolo)
+recount2_mat=assay(tcga_recount2)
+xena_mat= assay(tcga_xena)
+
+m = 5 # pairwise max of 2 vectors.
+lf = 2 # pairwise logfold change difference between 2 vectors
+
+plot_title_size =20
+axis_text_size = 20
+
+myFun  = function(x1, y1, plot_title){
+  df = data.frame(cbind( x=x1, y=y1))
+  sel = which(abs(x1- y1) > lf & pmax(x1, y1) > m)
+  color1 = rep("black", 4800)
+  color1[sel] = "red"
+  p0 = ggplot(df, aes(x=x, y=y)) +
+    geom_point(colour=color1) +
+    theme_bw(base_family="Helvetica") +
+    xlab("") +
+    ylab("")+
+    ggtitle(plot_title) +
+    theme(plot.title = element_text(lineheight=.8, size=plot_title_size),
+          axis.text=element_text(size=axis_text_size), 
+          axis.title=element_text(size=axis_text_size), 
+          plot.margin=unit(c(1,0.5,0.5,0.5),"cm")) # margins:top,right,bottom,left
+
+  p0
+}
+
+selGenes <- c("CEBPA","NPM1") # "IL3RA","OVCA2", "U2AF1")
+
+plots <- lapply( selGenes, function(gene){
+  idx = grep(paste0("^",gene,"$"), rownames(gdc_mat))
+  temp_gdc=gdc_mat[idx, ]
+  temp_piccolo=piccolo_mat[idx, ]
+  temp_mskcc_norm=mskcc_norm_mat[idx, ]
+  temp_recount2=recount2_mat[idx, ]
+  temp_xena=xena_mat[idx, ]
+  
+  if(gene == "U2AF1"){
+    u2af1_lst =list(temp_gdc =temp_gdc, 
+                    temp_piccolo =temp_piccolo, 
+                    temp_mskcc_norm = temp_mskcc_norm, 
+                    temp_recount2 = temp_recount2, 
+                    temp_xena = temp_xena) 
+    save(u2af1_lst, file="data/discordant/u2af1_tcga_expression.RData")
+  }
+  
+  p1 = myFun(x=temp_gdc, y=temp_xena, plot_title = "Xena vs\n GDC")
+  p1 = p1 + ylab(paste0(gene, " (log2(TPM+0.001))")) 
+  
+  p2 = myFun(x=temp_gdc, y=temp_recount2, plot_title = "Recount2 vs\n GDC")
+  p3 = myFun(x=temp_gdc, y=temp_mskcc_norm, plot_title = "MSKCC \nvs GDC")
+  p4 = myFun(x=temp_gdc, y=temp_piccolo, plot_title = "Piccolo vs\n GDC")
+  p5 = myFun(x=temp_xena, y=temp_recount2, plot_title = "Recount2 vs\n Xena")
+  
+  p6 = myFun(x=temp_xena, y=temp_piccolo, plot_title = "Piccolo vs\n Xena")
+  p6 = p6 + ylab(paste0(gene, " (log2(TPM+0.001))"))
+  
+  p7 = myFun(x=temp_xena, y=temp_mskcc_norm, plot_title = "MSKCC \nvs Xena")
+  p8 = myFun(x=temp_recount2, y=temp_piccolo, plot_title = "Piccolo vs\n Recount2")
+  p9 = myFun(x=temp_recount2, y=temp_mskcc_norm, plot_title = "MSKCC \nvs Recount2")
+  p10 = myFun(x=temp_mskcc_norm, y=temp_piccolo, plot_title = "Piccolo vs\n MSKCC")
+  
+ list(p1, p2, p3, p4, p5, p6, p7, p8, p9 , p10)
+})
+
+allplots = list(plots[[1]], plots[[2]])
+allplots = do.call( c, allplots)
+
+pdf(file.path(results_dir, "pdf", "Supp_Fig6_Pairwise_expression.pdf"), 
+    width = 24, height = 16)
+
+grid.arrange(grobs = allplots ,
+             layout_matrix =rbind( c(1, 2, 3, 4, 5),
+                                   c(6, 7, 8, 9, 10 ),
+                                   c(11, 12, 13, 14, 15), 
+                                   c(16, 17, 18, 19, 20 )), 
+             heights=unit(c(4,4, 4,4), c("in", "in", "in", "in")))
+dev.off()
+
+```
+
+## Correlations between each source of TCGA and GTEx Data
+
+```{r}
+rm(list=ls())
+
+suppressPackageStartupMessages({
+  library(ggplot2)
+  library(grid)
+  library(gridExtra)
+  library(beeswarm)
+})
+
+s1 = 3 # size for points in PCA plot
+legend_pt_size =4
+plot_title_size = 25
+axis_text_size = 25
+axis_title_size=25
+legend_text_size=20
+spacing=0.3
+chosen_margin = c(0.5,1,0.5,1)# margins:top,right,bottom,left
+text_size =10
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+
+if(!file.exists( file.path( git_dir, "data", "tables"))){
+  stop("Please clone from github")
+}
+if(!file.exists( file.path( results_dir))){
+   system(paste0("mkdir ", results_dir))
+}
+if(!file.exists( file.path( results_dir, "pdf"))){
+   system(paste0("mkdir ", file.path(results_dir, "pdf")))
+}
+
+
+tcga_result_file = file.path( git_dir, "data", "tables", 
+                "Supp_Table_TCGA_Correlations_all_6_Datasets_log2_TPM.txt")
+
+gtex_result_file = file.path( git_dir, "data", "tables", 
+    "Supp_Table_GTEX_Correlations_all_6_Datasets_log2_TPM.txt")
+
+protein_result_file =file.path( git_dir, "data", "tables", 
+          "Supp_Table_TCGA_Protein_MRNA_Correlations_all_6_Datasets.txt")
+
+tcga_mat = read.delim(tcga_result_file,
+                      header=TRUE,  stringsAsFactors = FALSE, row.names=1)
+gtex_mat = read.delim(gtex_result_file,
+                      header=TRUE,  stringsAsFactors = FALSE, row.names=1)
+mat = read.delim(protein_result_file,
+                 header=TRUE, stringsAsFactors = FALSE )
+
+
+tcga_data = rbind(
+  cbind( Value= tcga_mat[,"corr_XENA_Toil"], Group= rep("Xena", nrow(tcga_mat))) ,
+  cbind( Value= tcga_mat[,"corr_Piccolo_Lab"], Group= rep("Piccolo", nrow(tcga_mat))) ,
+  cbind( Value= tcga_mat[,"corr_Recount2"], Group= rep("Recount2", nrow(tcga_mat))) ,
+  cbind( Value= tcga_mat[,"corr_MSKCC_norm"], Group= rep("MSKCC", nrow(tcga_mat))) ,
+  cbind( Value= tcga_mat[,"corr_MSKCC_BATCH"], Group= rep("MSKCC Batch", nrow(tcga_mat))) )
+group_levels=c("Xena", "Piccolo","Recount2", 
+               "MSKCC","MSKCC Batch")
+group_colors= c("orange", "#E76BF3","grey45", "darkblue", "#00B0F6" )
+
+tcga_data = as.data.frame(tcga_data, stringsAsFactors=FALSE)
+tcga_data[,1] = as.numeric(tcga_data[,1])
+tcga_data =tcga_data[ complete.cases(tcga_data[,1]), ]
+tcga_data = tcga_data[-c(which(tcga_data[,1] == -1)), ]
+
+tcga_data[,2] = factor(tcga_data[,2],levels = group_levels)
+
+dodge <- position_dodge(width = 0.4)
+tcga_cor= ggplot(tcga_data, aes(x = Group, y = Value, color=Group )) +
+  geom_violin(position=dodge, fill= "gray60") +
+  xlab("") + ylab("Pearson Correlation") +
+  ggtitle("a")  +
+  geom_boxplot(width=0.1, outlier.color = NA, position=dodge, alpha=0.5) +
+  theme_bw(base_family="Helvetica") +
+  theme(plot.title = element_text(lineheight=.8, face="bold", size=plot_title_size),
+        plot.margin=unit(chosen_margin,"cm"), 
+        axis.text.x = element_text(angle = 45, hjust = 1, colour = "black"),
+        axis.text=element_text(size=axis_text_size),
+        axis.title=element_text(size=axis_title_size),
+        legend.text=element_text(size=legend_text_size),
+        legend.key.height = unit(spacing, "cm"),
+        #legend.position = "bottom",
+        legend.title=element_blank()) +
+    scale_color_manual(name = "Data Source",
+                     labels = group_levels,
+                     values = group_colors) +
+  guides(fill=FALSE) +
+  guides(color=FALSE) +
+  annotate("text", label = length(which(tcga_mat[,"corr_Piccolo_Lab"] < 0.8)) ,
+           x = 0.8, y = 0.75, size = text_size, colour = "red") +
+  annotate("text", label = length(which(tcga_mat[,"corr_MSKCC_BATCH"] < 0.8))  ,
+           x = 1.8, y = 0.75, size = text_size, colour = "red") +
+  annotate("text", label = length(which(tcga_mat[,"corr_MSKCC_norm"] < 0.8))  ,
+           x = 2.8, y = 0.75, size = text_size, colour = "red") +
+  annotate("text", label = length(which(tcga_mat[,"corr_Recount2"] < 0.8))  ,
+           x = 3.8, y = 0.75, size = text_size, colour = "red") +
+  annotate("text", label = length(which(tcga_mat[,"corr_XENA_Toil"] < 0.8)) ,
+           x = 4.8, y = 0.75, size = text_size, colour = "red") +
+  geom_hline(aes(yintercept = 0.8), linetype="dashed", colour="red")
+
+
+gtex_data = rbind(
+  cbind( Value= gtex_mat[,"corr_XENA_Toil"], Group= rep("Xena", nrow(gtex_mat))) ,
+  cbind( Value= gtex_mat[,"corr_Recount2"], Group= rep("Recount2", nrow(gtex_mat))) ,
+  cbind( Value= gtex_mat[, "corr_MSKCC_Norm"], Group= rep("MSKCC", nrow(gtex_mat))) ,
+  cbind( Value= gtex_mat[,"corr_MSKCC_BATCH"], Group= rep("MSKCC Batch", nrow(gtex_mat))) )
+
+group_levels2=c("Xena", "Recount2","MSKCC", "MSKCC Batch")
+group_colors2= c("orange","grey45", "darkblue", "#00B0F6")
+
+gtex_data = as.data.frame(gtex_data, stringsAsFactors=FALSE)
+gtex_data[,1] = as.numeric(gtex_data[,1])
+gtex_data =gtex_data[ complete.cases(gtex_data[,1]), ]
+
+gtex_data[,2] = factor(gtex_data[,2], levels =group_levels2 )
+
+
+dodge <- position_dodge(width = 0.4)
+gtex_cor=ggplot(gtex_data, aes(x = Group, y = Value, fill=Group)) +
+  geom_violin(position=dodge) +
+  xlab("") + ylab("Pearson Correlation") +
+  ggtitle("b")  +
+  geom_boxplot(width=.1, outlier.color = NA, position=dodge, fill="white") +
+  theme_bw(base_family="Helvetica") +
+  theme(plot.title = element_text(lineheight=.8, face="bold", size=plot_title_size),
+        plot.margin=unit(chosen_margin,"cm"), 
+        axis.text.x = element_text(angle = 45, hjust = 1, colour = "black"),
+        axis.text=element_text(size=axis_text_size),
+        axis.title=element_text(size=axis_title_size),
+        legend.text=element_text(size=legend_text_size),
+        legend.key.height = unit(spacing, "cm"),
+        legend.title=element_blank()) +
+  scale_fill_manual(name = "Data Source",
+                    labels = group_levels2,
+                    values = group_colors2) +
+  guides(fill=FALSE) +
+  annotate("text", label = length(which(gtex_mat[,"corr_MSKCC_BATCH"] < 0.8))  ,
+           x = 0.7, y = 0.75, size = text_size, colour = "red") +
+  annotate("text", label = length(which(gtex_mat[,"corr_MSKCC_Norm"] < 0.8))  ,
+           x = 1.7, y = 0.75, size = text_size, colour = "red") +
+  annotate("text", label = length(which(gtex_mat[,"corr_Recount2"] < 0.8))  ,
+           x = 2.7, y = 0.75, size = text_size, colour = "red") +
+  annotate("text", label = length(which(tcga_mat[,"corr_XENA_Toil"] < 0.8)) ,
+           x = 3.7, y = 0.75, size = text_size, colour = "red") +
+  geom_hline(aes(yintercept = 0.8), linetype="dashed", colour="red")
+
+
+
+prot_data = rbind(
+  cbind( Value= mat[,"corr_protein_GDC"], Group= rep("GDC", nrow(mat))) ,
+  cbind( Value= mat[,"corr_protein_PiccoloLab"], Group= rep("Piccolo", nrow(mat))) ,
+  cbind( Value= mat[,"corr_protein_mskcc_BATCH"], Group= rep("MSKCC Batch", nrow(mat))) ,
+  cbind( Value= mat[,"corr_protein_mskcc_Norm"], Group= rep("MSKCC", nrow(mat))) ,
+  cbind( Value= mat[,"corr_protein_Recount2"], Group= rep("Recount2", nrow(mat))),
+  cbind( Value= mat[,"corr_protein_Xena_Toil"], Group= rep("Xena", nrow(mat)))   )
+
+group_levels3=c("GDC", "Xena", "Piccolo", "Recount2","MSKCC", "MSKCC Batch")
+group_colors3= c("#A3A500",  "orange","#E76BF3", "grey45", "darkblue", "#00B0F6")
+   
+prot_data = as.data.frame(prot_data, stringsAsFactors=FALSE)
+prot_data[,1] = as.numeric(prot_data[,1])
+prot_data[,2] = factor(prot_data[,2],levels = group_levels3)
+
+beeswarm = beeswarm(Value ~Group, data = prot_data, method = "swarm")
+colnames(beeswarm) = gsub("x.orig", "DataSource", colnames(beeswarm))
+beeswarm[,"DataSource"] = factor(beeswarm[,"DataSource"],levels = group_levels3)
+
+dodge <- position_dodge(width = 0.4)
+prot1 =   ggplot(beeswarm, aes(x, y, colour = DataSource)) +
+  geom_boxplot(aes(x, y, group = DataSource),
+               width=.1, outlier.color = NA, position=dodge, fill="white") +
+  geom_point( aes(colour=DataSource), shape=16) +
+  xlab("") + ylab("Spearman Correlation") +
+  ggtitle("c")  +
+  scale_color_manual(name = "Data Source",
+                     labels = group_levels3,
+                     values = group_colors3) +
+  theme_bw(base_family="Helvetica") +
+  theme(plot.title = element_text(lineheight=.8, face="bold", size=plot_title_size),
+        plot.margin=unit(chosen_margin,"cm"),
+        axis.text=element_text(size=axis_text_size),
+        axis.title=element_text(size=axis_title_size),
+        legend.text=element_text(size=legend_text_size),
+        legend.key.height = unit(spacing, "cm"),
+        axis.text.x = element_text(angle = 45, hjust = 1, colour = "black"),
+        legend.title=element_blank(), 
+        legend.position="none")  +
+  scale_x_continuous(breaks = c(1:6),
+                     labels = group_levels3)
+
+pdf(file.path( results_dir, "pdf", "Supp_Fig7_correlations.pdf"), 
+    width =24, height =12)
+layout <- rbind( c(1, 2, 3))
+nat3= list(tcga_cor, gtex_cor, prot1)
+marrangeGrob(nat3, layout_matrix = layout, top="")
+dev.off()
+
+```

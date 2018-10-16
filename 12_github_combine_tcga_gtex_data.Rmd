@@ -1,0 +1,251 @@
+---
+title: "Combined TCGA and GTEX PCAs for Thyroid, Liver, and Stomach"
+author: "Sonali Arora, Hamid Bolouri"
+date: "October 1, 2018"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+## Introduction 
+
+In this vignette, we illustrate of potential batch effects between TCGA and GTEx
+using gene expression data for thyroid, liver and stomach from GTEX data sources
+and compare it with gene expression data for their respective 
+cancer types (THCA, LIHC and STAD) from TCGA.
+
+```{r setup}
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(SummarizedExperiment)
+  library(Hmisc)
+  library(ggplot2)
+  library(pheatmap)
+  library(RColorBrewer)
+  library(gridExtra)
+  library(grid)
+})
+
+s1 = 3 # size for points in PCA plot
+legend_pt_size =4
+plot_title_size = 25
+axis_text_size = 25
+axis_title_size=25
+legend_text_size=20
+spacing=0.3
+chosen_margin = c(0.5,1,0.5,1)# margins:top,right,bottom,left
+text_size =10
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+
+if(!file.exists( file.path( results_dir))){
+   system(paste0("mkdir ", results_dir))
+}
+if(!file.exists( file.path( results_dir, "pdf"))){
+   system(paste0("mkdir ", file.path(results_dir, "pdf")))
+}
+if(!file.exists( file.path(s3_dir, "SE_objects"))){
+  stop("Please go through vignette 3 & 4 to make SE objects or download from S3 bucket")
+}
+```
+
+## Load TCGA Data
+
+```{r}
+# load the TCGA data
+tcga_gdc <- get(load( file.path( s3_dir, "SE_objects","tcga_gdc_log2_TPM.RData")))
+tcga_mskcc_norm <- get(load( file.path( s3_dir, "SE_objects", "tcga_mskcc_norm_log2_TPM.RData")))
+tcga_mskcc_batch <- get(load( file.path( s3_dir, "SE_objects", "tcga_mskcc_batch_log2_TPM.RData")))
+tcga_recount2 <- get(load( file.path( s3_dir, "SE_objects", "tcga_recount2_log2_TPM.RData")))
+tcga_xena <- get(load( file.path( s3_dir, "SE_objects", "tcga_xena_log2_TPM.RData")))
+tcga_piccolo <- get(load( file.path( s3_dir, "SE_objects","tcga_piccolo_log2_TPM.RData")))
+
+tcga_gdc_mat = assay(tcga_gdc)
+tcga_mskcc_norm_mat=assay(tcga_mskcc_norm)
+tcga_mskcc_batch_mat=assay(tcga_mskcc_batch)
+tcga_recount2_mat=assay(tcga_recount2)
+tcga_xena_mat= assay(tcga_xena)
+
+# exxtract the cancer samples from TCGA rse objects
+cancer_idx = which(colData(tcga_gdc)[,2] %in%  c("THCA", "LIHC", "STAD"))
+tcga_gdc = tcga_gdc[,cancer_idx] # rse object
+
+tcga_gdc_mat= tcga_gdc_mat[ , cancer_idx]
+tcga_mskcc_norm_mat = tcga_mskcc_norm_mat[ , cancer_idx]
+tcga_mskcc_batch_mat = tcga_mskcc_batch_mat[ , cancer_idx]
+tcga_recount2_mat=tcga_recount2_mat[, cancer_idx]
+tcga_xena_mat = tcga_xena_mat[, cancer_idx]
+
+```
+
+## Load GTEx Data
+
+```{r}
+# load the GTEx data
+gtex_v6 <- get(load( file.path( s3_dir, "SE_objects","gtex_v6_log2_TPM.RData")))
+gtex_mskcc_norm <- get(load( file.path( s3_dir, "SE_objects","gtex_mskcc_norm_log2_TPM.RData")))
+gtex_mskcc_batch <- get(load( file.path( s3_dir, "SE_objects","gtex_mskcc_batch_log2_TPM.RData")))
+gtex_recount2 <- get(load( file.path( s3_dir, "SE_objects", "gtex_recount2_log2_TPM.RData")))
+gtex_xena <- get(load( file.path( s3_dir, "SE_objects","gtex_xena_log2_TPM.RData")))
+
+gtex_v6_mat = assay(gtex_v6)
+gtex_mskcc_norm_mat=assay(gtex_mskcc_norm)
+gtex_mskcc_batch_mat=assay(gtex_mskcc_batch)
+gtex_recount2_mat=assay(gtex_recount2)
+gtex_xena_mat= assay(gtex_xena)
+
+# extract the normal samples from GTEx rse objects
+normal_idx = which(colData(gtex_v6)[,"SMTS"] %in%  c("Thyroid", "Liver", "Stomach"))
+gtex_v6  = gtex_v6[, normal_idx] # rse object
+
+gtex_v6_mat = gtex_v6_mat[, normal_idx]
+gtex_mskcc_norm_mat = gtex_mskcc_norm_mat[ , normal_idx]
+gtex_mskcc_batch_mat = gtex_mskcc_batch_mat[ , normal_idx]
+gtex_recount2_mat = gtex_recount2_mat[, normal_idx ]
+gtex_xena_mat = gtex_xena_mat[, normal_idx]
+```
+
+## Common genes shared by GTEx and TCGA data
+
+```{r}
+# use common genes from both TCGA and GTEx rse objects
+genes = intersect(rowRanges(tcga_gdc)$external_gene_name, rowRanges(gtex_v6)$gene_name)
+
+ix = match(genes, rowRanges(tcga_gdc)$external_gene_name)
+ix2 = match(genes, rowRanges(gtex_v6)$gene_name)
+
+tcga_gdc_mat = tcga_gdc_mat[ix, ]
+tcga_mskcc_norm_mat = tcga_mskcc_norm_mat[ ix, ]
+tcga_mskcc_batch_mat = tcga_mskcc_batch_mat[ix, ]
+tcga_recount2_mat=tcga_recount2_mat[ix, ]
+tcga_xena_mat = tcga_xena_mat[ix, ]
+
+gtex_v6_mat = gtex_v6_mat[ix2,]
+gtex_mskcc_norm_mat = gtex_mskcc_norm_mat[ix2, ]
+gtex_mskcc_batch_mat = gtex_mskcc_batch_mat[ix2, ]
+gtex_recount2_mat = gtex_recount2_mat[ix2, ]
+gtex_xena_mat = gtex_xena_mat[ix2, ]
+
+tcga_temp = as.character(colData(tcga_gdc)[,2])
+tcga_temp = gsub("STAD", "TCGA-Stomach", tcga_temp)
+tcga_temp = gsub("THCA", "TCGA-Thyroid", tcga_temp)
+tcga_temp = gsub("LIHC", "TCGA-Liver", tcga_temp)
+gdc_temp = as.character(colData(gtex_v6)[,"SMTS"])
+gdc_temp = gsub("Thyroid", "GTEX-Thyroid", gdc_temp)
+gdc_temp = gsub("Liver", "GTEX-Liver", gdc_temp)
+gdc_temp = gsub("Stomach", "GTEX-Stomach", gdc_temp)
+sampleType = c(tcga_temp, gdc_temp )
+table(sampleType)
+```
+
+## PCA plots
+
+```{r}
+# function for making pca plot.
+myFig2_pca<- 
+  function(final1, sampleType, title, cancer_idx, normal_idx)
+{
+  col_lst = c("GTEX-Thyroid" =   "chocolate1",
+              "GTEX-Liver" =  "purple",
+              "GTEX-Stomach" =  "chartreuse4" ,
+              "TCGA-Thyroid" =   "chocolate1" ,
+              "TCGA-Liver" = "purple",  
+              "TCGA-Stomach" =  "chartreuse4"  )   
+  
+  pc_all= prcomp(t(final1), center = TRUE)
+  percentVar <- (pc_all$sdev^2 / sum(pc_all$sdev^2 ) )*100
+  percentVar= round(percentVar[1:2], 2)
+  coldata_all = data.frame(Project = c(rep("TCGA", length(cancer_idx)),
+                                       rep("GTEX", length(normal_idx))),
+                           sampleType =sampleType)
+ 
+  pc_data_all = data.frame(PC1=pc_all$x[,1], PC2=pc_all$x[,2],
+                           coldata_all,
+                           sampleName = colnames(final1))
+  
+  pc_data_all$sampleType = factor(pc_data_all$sampleType, levels = names(col_lst))
+  p1 = ggplot(pc_data_all, aes(PC1, PC2, color=sampleType, shape=sampleType)) +
+    geom_point(size=s1,  alpha=0.5) +
+    xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+    ylab(paste0("PC2: ",percentVar[2],"% variance")) +
+    ggtitle(paste0( title)) +
+    scale_color_manual( breaks=levels(pc_data_all[,"sampleType"]),
+                       values=col_lst) +
+    scale_shape_manual(labels = levels(pc_data_all[,"sampleType"]),
+                       values = c(19,  19, 19, 17, 17,17)) +
+    stat_ellipse(type ="t")  +
+    theme_bw(base_family="Helvetica") +
+        theme(
+        plot.title = element_text(hjust=0, vjust=0, 
+            lineheight=.8, face="bold", size=plot_title_size ),
+        plot.margin=unit(chosen_margin,"cm"), 
+        axis.text=element_text(size=axis_text_size),
+        axis.title=element_text(size=axis_title_size),
+        legend.text=element_text(size=legend_text_size),
+        legend.key.height = unit(spacing, "cm"),
+        legend.position = "bottom",
+        legend.title=element_blank() )+
+    guides( color = guide_legend(override.aes =
+            list(alpha = 1)))
+  p1
+
+}
+
+# make PCA plot for each source
+final1 = cbind(tcga_gdc_mat, gtex_v6_mat)
+plot1= myFig2_pca(final1, sampleType, 
+                title = "a", cancer_idx, normal_idx) 
+
+final1 = cbind(tcga_xena_mat,gtex_xena_mat )
+plot2 = myFig2_pca(final1, sampleType, 
+                 title = "b", cancer_idx, normal_idx)
+
+final1 = cbind(tcga_recount2_mat,gtex_recount2_mat )
+plot3 = myFig2_pca(final1, sampleType, 
+                 title = "c", cancer_idx, normal_idx)
+
+final1 = cbind(tcga_mskcc_norm_mat,gtex_mskcc_norm_mat )
+plot4 = myFig2_pca(final1, sampleType, 
+                 title = "d", cancer_idx, normal_idx)
+
+
+final1 = cbind(tcga_mskcc_batch_mat,gtex_mskcc_batch_mat )
+plot5 = myFig2_pca(final1, sampleType, 
+                 title = "e", cancer_idx, normal_idx)
+
+# arrange and make figure
+ 
+# extract legend for one plot.
+g_legend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  # g <- ggplotGrob(a.gplot + theme(legend.position="bottom"))$grobs
+  # legend <- g[[which(sapply(g, function(x) x$name) == "guide-box")]]
+  return(legend)
+}
+mylegend<-g_legend(plot1)
+
+pdf( file.path( results_dir, "pdf", "Supp_Fig5_Thyroid_Liver_Stomach2.pdf"), 
+     width=24, height=16)
+grid.arrange(arrangeGrob(plot1 + theme(legend.position="none"),
+                       plot2+ theme(legend.position="none"),
+                       plot3+ theme(legend.position="none"),
+                       plot4+ theme(legend.position="none"),
+                       plot5+ theme(legend.position="none"),
+                       top=textGrob(""), nrow=2, ncol=3),
+           mylegend,  ncol=1,heights=c(14,2))
+dev.off()
+```

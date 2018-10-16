@@ -1,0 +1,354 @@
+---
+title: "Acquiring GTEX Data"
+author: "Sonali Arora, Hamid Bolouri"
+date: "October 1, 2018"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+## Introduction
+
+In this vignette, we show how we downloaded the data from each source, and then
+created SummarizedExperiment objects for each source of data. 
+
+A great introduction to  SummarizedExperiment can be found [here](https://bioconductor.org/packages/release/bioc/vignettes/SummarizedExperiment/inst/doc/SummarizedExperiment.html).
+
+## GTEX data from GTEx Portal 
+
+The following files were downloaded from the GTEX website (version6) and 
+saved to the amazon s3 bucket under "data source_GTEX_v6".  
+
+1) GTEx_Analysis_v6_RNA-seq_RNA-SeQCv1.1.8_gene_rpkm.gct  
+2) GTEx_Data_V6_Annotations_SampleAttributesDS.txt  
+3) gencode.v19.genes.v7.patched_contigs.gtf  
+
+```{r eval=FALSE}
+
+rm(list=ls())
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+library(rtracklayer)
+genes_gr = import(file.path(s3_dir, "annotations", 
+  "gencode.v19.genes.patched_contigs.gtf"))
+
+
+rpkm = read.delim(file.path(s3_dir, 
+  "datasource_GTEX_v6", "GTEx_Analysis_v6_RNA-seq_RNA-SeQCv1.1.8_gene_rpkm.gct"), 
+  header=T, stringsAsFactors=FALSE, row.names=1, skip=2)
+rpkm = data.matrix(rpkm[, -1])
+colnames(rpkm) = gsub("\\.","-", colnames(rpkm))
+
+pheno = read.delim(file.path(s3_dir,
+  "datasource_GTEX_v6","GTEx_Data_V6_Annotations_SampleAttributesDS.txt"), 
+  header=T, stringsAsFactors=FALSE)
+idx = match(colnames(rpkm), pheno[,1])
+pheno2 = pheno[idx, ]
+rownames(pheno2) = pheno2[,1]
+common_genes = intersect(rownames(rpkm), genes_gr$gene_id)
+idx2 = match(common_genes, genes_gr$gene_id)
+genes_gr= genes_gr[idx2, ]
+rpkm2 = rpkm[ match(common_genes, rownames(rpkm)) ,]
+
+dim(rpkm2)
+length(genes_gr)
+
+gtex_original_rpkm2 = SummarizedExperiment(
+    assays=SimpleList(counts=data.matrix(rpkm2)),
+    rowRanges=genes_gr, colData=pheno2)
+save(gtex_original_rpkm,file=file.path(results_dir, "combined_SEobjects",
+                    "gtex_rpkm_09_28_2018.RData"))
+
+```
+
+## GTEX data from Xena-Toil 
+
+The following files were downloaded from Toil via
+[UCSC Xena's website](https://xenabrowser.net/datapages/?hub=https://toil.xenahubs.net:443)  
+
+1) TCGA_GTEX_category.txt  
+2) TcgaTargetGTEX_phenotype.txt  
+3) TcgaTargetGtex_rsem_gene_fpkm  
+4) TcgaTargetGtex_rsem_gene_tpm  
+
+We downloaded both FPKM and TPM counts. Since the same file contained both TCGA 
+and GTEx data, we created a quick function to extract each data type. 
+
+```{r eval=FALSE}
+rm(list=ls())
+gc()
+library(rtracklayer)
+library(SummarizedExperiment)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+ 
+createSEfromXena <- 
+  function(tag, countsFile)
+{
+  genes_v23 = import(file.path(s3_dir, "annotations", 
+                               "gencode.v23.annotation.gtf"))
+  
+  category = read.delim(file.path(s3_dir, "datasource_XENA",
+      "TCGA_GTEX_category.txt"),  header=TRUE, stringsAsFactors=FALSE)
+  
+  category = category[grep(paste0("^",tag, "*"), category[,2]), ]
+  expected_counts = read.delim(countsFile, header=TRUE, stringsAsFactors=FALSE,
+                               row.names=1)
+  # get row in order
+  row_nms = intersect( rownames(expected_counts), genes_v23$gene_id)
+  expected_count2 = expected_counts[row_nms, ]
+  genes_v23 = genes_v23[ match( rownames(expected_count2), genes_v23$gene_id), ]
+  dim(expected_count2)
+  expected_count2[1:5, 1:5]
+  
+  # get column in order.
+  colnames(expected_count2) = gsub("\\.", "-", colnames(expected_count2))
+  expected_count2 = expected_count2[, grep(paste0("^",tag, "*"),  colnames(expected_count2))]
+  expected_count2[1:5, 1:5]
+  
+  phenotype = read.delim(file.path(s3_dir, "datasource_XENA",
+      "TcgaTargetGTEX_phenotype.txt"), header=TRUE, stringsAsFactors=FALSE)
+  phenotype = phenotype[which(phenotype[,7]==tag), ]
+  
+  idx = match(colnames(expected_count2), phenotype[,1])
+  expected_count2 = expected_count2[, na.omit(idx) ]
+  expected_count2[1:5, 1:5]
+  
+  
+  idx = match(substr(colnames(expected_count2),1,15), phenotype[,1])
+  phenotype = phenotype[idx, ]
+  expected_count2 = data.matrix(expected_count2)
+  rownames(phenotype) = colnames(expected_count2)
+  
+  rse <- SummarizedExperiment(assays=SimpleList(counts=expected_count2),
+                              rowRanges=genes_v23, colData=phenotype)
+  rse
+}
+
+gtex_fpkm = createSEfromXena("GTEX", file.path(s3_dir, "datasource_XENA",
+                                               "TcgaTargetGtex_rsem_gene_fpkm"))
+gtex_tpm = createSEfromXena("GTEX", file.path(s3_dir, "datasource_XENA",
+                                              "TcgaTargetGtex_rsem_gene_tpm"))
+
+save(gtex_fpkm, file = file.path(results_dir,"combined_SEobjects",
+                                 "GTEX_Xena_RSEM_FPKM_09_28_2018.RData"))
+save(gtex_tpm, file = file.path(results_dir,"combined_SEobjects",
+                                "GTEX_Xena_RSEM_TPM_09_28_2018.RData"))
+```				 
+
+
+## GTEX data from MSKCC (MSKCC)
+
+The data subfolder was downloaded from [github website](https://github.com/mskcc/RNAseqDB)
+by cloning the git repository. 
+
+The authors call this data "unnormalized" meaning it has not been batch corrected.
+We refer to this data source as "MSKCC" to indicate it is normalized to FPKM.
+
+```{r eval=FALSE}
+rm(list=ls())
+library(rtracklayer)
+library(SummarizedExperiment)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+source = file.path(s3_dir, "datasource_MSKCC", "RNAseqDB", "data", "unnormalized")
+files = list.files(path = source, full.names = T, pattern ="*gtex.txt$")
+
+# There is a file for each region  
+all_data = lapply(files, function(x){
+   dat = read.delim(x, header=T, stringsAsFactors=FALSE, row.names=1)
+   dat =dat[,-1]
+})
+
+# check No of samples and genes in each region
+sapply(all_data, nrow)
+sapply(all_data, ncol)
+
+genes = lapply(all_data, function(x) rownames(x))
+genes_df = table(unlist(genes))
+
+# want to take genes present in all samples
+genes = names(which(genes_df==15))
+class(genes) 
+length(genes) # 20242
+
+# want to ensure same order of genes in each file.
+all_data = lapply(all_data, function(x){
+   x[genes, ]
+})
+types = gsub("-rsem-fpkm-gtex.txt", "", basename(files))
+
+pheno = mapply(function(x,y){
+   cbind(sample = colnames(y),type=rep(x,ncol(y)) )
+}, x=types, y = all_data)
+
+pheno = do.call(rbind, pheno)
+all_data = do.call(cbind, all_data)
+
+genes_gr = import(file.path(s3_dir, "annotations","gencode.v19.annotation.gtf"))
+common_genes=intersect(rownames(all_data), genes_gr$gene_name)
+length(common_genes) # 19610
+
+all_data = all_data[common_genes, ]
+genes_gr2 = genes_gr[match(common_genes, genes_gr$gene_name), ]
+mcols(genes_gr2) = mcols(genes_gr2)[,c("gene_id", "gene_name", "gene_type")]
+rownames(pheno) = pheno[,1]
+mskcc_norm<-SummarizedExperiment(assays=SimpleList(counts=data.matrix(all_data)),
+                            rowRanges=genes_gr2, colData=pheno)
+save(mskcc_norm, file=file.path(results_dir, "combined_SEobjects",
+                                "GTEX_unnormalized_RNAseqDB_09_28_2018.RData"))
+```
+
+## GTEX data from MSKCC (MSKCC-Batch)
+
+The data subfolder was downloaded from [github website](https://github.com/mskcc/RNAseqDB)
+by cloning the git repository. 
+
+Note: The authors call this data "normalized" meaning it has been batch-corrected. We refer to this  data source 
+as "MSKCC-Batch".
+
+```{r eval=FALSE}
+rm(list=ls())
+library(rtracklayer)
+library(SummarizedExperiment)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+source = file.path(s3_dir, "datasource_MSKCC","RNAseqDB","data","normalized")
+files = list.files(path = source, full.names = T, pattern ="*gtex.txt$")
+
+# There is a file for each region
+all_data = lapply(files, function(x){
+   dat = read.delim(x, header=T, stringsAsFactors=FALSE, row.names=1)
+   dat =dat[,-1]
+})
+
+# beaware: no of genes in each region is NOT constant!
+sapply(all_data, nrow)
+sapply(all_data, ncol)
+ 
+genes = lapply(all_data, function(x) rownames(x))
+genes_df = table(unlist(genes))
+
+# We want to take only those genes which is present in each region.
+genes = names(which(genes_df==15)) 
+class(genes) 
+length(genes)
+all_data = lapply(all_data, function(x){
+   x[genes, ]
+})
+types = gsub("-rsem-fpkm-gtex.txt", "", basename(files))
+
+pheno = mapply(function(x,y){
+   cbind(sample = colnames(y),type=rep(x,ncol(y)) )
+}, x=types, y = all_data)
+
+pheno = do.call(rbind, pheno)
+all_data = do.call(cbind, all_data)
+
+genes_gr = import(file.path(s3_dir, "annotations","gencode.v19.annotation.gtf"))
+common_genes=intersect(rownames(all_data), genes_gr$gene_name)
+length(common_genes) 
+
+all_data = all_data[common_genes, ]
+genes_gr2 = genes_gr[match(common_genes, genes_gr$gene_name), ]
+mcols(genes_gr2) = mcols(genes_gr2)[,c("gene_id", "gene_name", "gene_type")]
+rownames(pheno) = pheno[,1]
+mskcc_batch <-SummarizedExperiment(assays=SimpleList(counts=data.matrix(all_data)),
+                            rowRanges=genes_gr2, colData=pheno)
+save(mskcc_batch, file=file.path(results_dir, "combined_SEobjects",
+                                 "GTEX_normalized_RNAseqDB_09_28_2018.RData"))
+```
+
+
+## GTEX data from Recount2
+
+RSE objects were downloaded from [Recount2's website](https://jhubiostatistics.shinyapps.io/recount/)
+Note: all objects downloaded from recount2 have the same name 
+(ie rse_gene.Rdata), so the RSE objects were downloaded in separate folders.
+R/Bioconductor package [Recount](https://bioconductor.org/packages/release/bioc/html/recount.html) was used to convert raw counts to RPKM counts.
+
+```{r eval=FALSE}
+rm(list=ls())
+library(rtracklayer)
+library(SummarizedExperiment)
+library(recount)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+#1. load rsa
+load(file.path(s3_dir, "datasource_RECOUNT2_GTEX","rse_gene.Rdata"))
+
+#2. Calculate RPKM
+rpkm <- getRPKM(rse_gene, length_var = "bp_length", 
+                mapped_var = "mapped_read_count")
+identical( colnames(rse_gene), colnames(rpkm))
+identical( rownames(rse_gene), rownames(rpkm))
+
+assay(rse_gene) = rpkm
+
+# 3. coldata contains a very large DataFrame
+# we wantonly TCGA id, TCGA subtype and batch no 
+col_nms =c("sampid","smts", 
+            "smtsd",  
+            "smtstptref", "smnabtch") 
+col_idx = match(col_nms, colnames(colData(rse_gene)))
+colData(rse_gene) = colData(rse_gene)[, col_idx]
+
+length(colData(rse_gene)[,1])  # 9662
+length(unique(colData(rse_gene)[,1])) #  9662
+
+save(rse_gene, file=file.path( results_dir, "combined_SEobjects_GTEX",
+                               "rse_gene_gtex_recount2_09_28_2018.RData"))
+
+```
+
+

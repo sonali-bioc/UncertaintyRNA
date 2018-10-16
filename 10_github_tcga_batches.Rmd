@@ -1,0 +1,339 @@
+---
+title: "Batches in TCGA Data"
+author: "Sonali Arora, Hamid Bolouri"
+date: "October 1, 2018"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+## Introduction
+
+The Cancer Genome Atlas (TCGA) collects tumor samples in different institutions 
+and at different times. Previously, the the samples were processed in batches 
+rather than all at once, and the data was found to have unwanted variation 
+between batches (batch effects). 
+
+
+Recently TCGA data was processed all at once to remove these batch effects 
+by re-processing all the samples, and in the vignette below, 
+we calculate Principal Components to see if batch effects still exist under 
+
+One can read about the TCGA Data Collection Process in detail  [here](https://bioinformatics.mdanderson.org/main/TCGABatchEffects:Overview)
+
+We considered 3 batches and here is a brief description of each of the batches considered by us. 
+
+a) Plate-Id
+Analytes are transported to sequencing centers on various ShipDates and processed into usable data on plates each with its own unique PlateID.
+
+b) TSS-Id
+Biospecimens consisting of Tumor and Normal tissue samples and clinical metadata are collected from patients donors at various Tissue Source Sites (TSS). Each TSS is identified by its unique TSS ID.
+
+c) BCR-Id 
+These biospecimens are transported to TCGA Biospecimen Core Resources (BCR) laboratories, which ensure these specimens meet the TCGA biospecimen criteria. Specimens of sufficient quality are cataloged, processed and stored for analysis. Any patient identifying information is removed during the process.
+
+
+```{r tcga-batch}
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(SummarizedExperiment)
+  library(Hmisc)
+  library(ggplot2)
+  library(pheatmap)
+  library(RColorBrewer)
+  library(grid)
+  library(gridExtra)
+})
+
+s1 = 3 # size for points in PCA plot
+legend_pt_size =4
+plot_title_size = 25
+axis_text_size = 25
+axis_title_size=25
+legend_text_size=20
+spacing=0.3
+chosen_margin = c(0.5,1,0.5,1)# margins:top,right,bottom,left
+text_size =10
+
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+if(!file.exists( file.path( results_dir))){
+   system(paste0("mkdir ", results_dir))
+}
+if(!file.exists( file.path( results_dir, "pdf"))){
+   system(paste0("mkdir ", file.path(results_dir, "pdf")))
+}
+if(!file.exists(file.path(s3_dir, "SE_objects"))){
+  stop("Please go through vignette 3 & 4 to make SE objects or download from S3 bucket")
+}
+
+myDistintColors=function(n){
+  dcols = c(forestgreen="forestgreen",  Black="#000000",
+            Blue="#0082c8", Brown="#aa6e28",
+            Coral="#ffd8b1", Cyan="#46f0f0",
+            Green="#3cb44b", Grey="#808080", Lavender="#e6beff",
+            Lime="#d2f53c", Magenta="#f032e6", Maroon="#800000",
+            Mint="#aaffc3", Navy="#000080", Olive="#808000",
+            Orange="#f58231", Pink="#fabebe", Purple="#911eb4",
+            Red="#e6194b", Teal="#008080", burlywood4="burlywood4",
+            Yellow="#ffe119", aquamarine4="aquamarine4",
+            darkgoldenrod1="darkgoldenrod1", deepskyblue="deepskyblue",
+            gold="gold", darkslategray1="darkslategray1",
+            deeppink="deeppink", lightsalmon="lightsalmon",
+            ivory4="ivory4", tan3="tan3",
+            slategray4="slategray4", lightpink4="lightpink4",
+            mediumseagreen="mediumseagreen", mediumslateblue="mediumslateblue",
+            mistyrose4="mistyrose4", olivedrab="olivedrab", orange4="orange4",
+            red4="red4", royalblue4="royalblue4", pink4="pink4"
+  )
+  dcols[1:n]
+}
+
+myBatchPCAPlot <- function(mat, TCGA_Batch , title){
+  pc= prcomp(t(mat))
+  percentVar <- (pc$sdev^2 / sum( pc$sdev^2 ) )*100
+  percentVar= round(percentVar[1:2], 2)
+  pc_data1 = data.frame(PC1=pc$x[,1], PC2=pc$x[,2],
+                        TCGA_Batch=TCGA_Batch,
+                        sampleName = colnames(mat))
+
+  pc_data1[,"TCGA_Batch"]=factor(TCGA_Batch)
+  use_cols=myDistintColors(n=length(levels(pc_data1[,"TCGA_Batch"])))
+  names(use_cols)=NULL
+  p <- ggplot(pc_data1, aes(PC1, PC2, color=TCGA_Batch)) +
+    geom_point(size=s1, shape=16,alpha=0.5) +
+    xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+    ylab(paste0("PC2: ",percentVar[2],"% variance")) +
+    ggtitle(title) +
+    scale_color_manual(name="TCGA_Batch",
+                       breaks=levels(pc_data1[,"TCGA_Batch"]),
+                       values=use_cols) +
+    theme_bw(base_family="Helvetica") +
+    theme(plot.title = element_text(lineheight=.8, face="bold", size=plot_title_size),
+         plot.margin=unit(chosen_margin,"cm"), 
+        axis.text=element_text(size=axis_text_size),
+        axis.title=element_text(size=axis_title_size),
+        legend.text=element_text(size=legend_text_size),
+        legend.key.height = unit(spacing, "cm"),
+        legend.position = "bottom",
+        legend.title=element_blank()) +
+    guides( color = guide_legend(override.aes =
+            list(alpha = 1, size=legend_pt_size, shape=16, ncol=3)))
+  p
+
+}
+
+#extract legend
+#https://github.com/hadley/ggplot2/wiki/Share-a-legend-between-two-ggplot2-graphs
+g_legend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)}
+
+# load data
+tcga_gdc <- get(load( file.path( s3_dir, "SE_objects","tcga_gdc_log2_TPM.RData")))
+tcga_mskcc_norm <- get(load( file.path( s3_dir, "SE_objects", "tcga_mskcc_norm_log2_TPM.RData")))
+tcga_mskcc_batch <- get(load( file.path( s3_dir, "SE_objects", "tcga_mskcc_batch_log2_TPM.RData")))
+tcga_recount2 <- get(load( file.path( s3_dir, "SE_objects", "tcga_recount2_log2_TPM.RData")))
+tcga_xena <- get(load( file.path( s3_dir, "SE_objects", "tcga_xena_log2_TPM.RData")))
+tcga_piccolo <- get(load( file.path( s3_dir, "SE_objects","tcga_piccolo_log2_TPM.RData")))
+
+gdc_mat = assay(tcga_gdc)
+mskcc_norm_mat=assay(tcga_mskcc_norm)
+mskcc_batch_mat=assay(tcga_mskcc_batch)
+piccolo_mat=assay(tcga_piccolo)
+recount2_mat=assay(tcga_recount2)
+xena_mat= assay(tcga_xena)
+
+types =unique(colData(tcga_piccolo)[,2])
+```
+
+## Make Supp Fig with "BRCA" and Batch Variable as "PlateID"
+
+```{r}
+x = "BRCA"
+idx = which(colData(tcga_piccolo)[,2]==x)
+temp_gdc=gdc_mat[ ,idx]
+temp_xena=xena_mat[ ,idx]
+temp_gse62944=piccolo_mat[ ,idx]
+temp_recount2=recount2_mat[,idx]
+temp_mskcc_fpkm=mskcc_norm_mat[ ,idx]
+temp_mskcc_batch=mskcc_batch_mat[ ,idx]
+
+PlateId=substr(colnames(temp_gdc) ,22 ,25)
+
+p11 = myBatchPCAPlot(mat=temp_gdc, TCGA_Batch=PlateId,
+                     title= "a")
+p12= myBatchPCAPlot(mat=temp_xena, TCGA_Batch=PlateId,
+                     title=  "b")
+p13 = myBatchPCAPlot(mat=temp_gse62944, TCGA_Batch=PlateId,
+                     title= "c")
+p14 = myBatchPCAPlot(mat=temp_recount2, TCGA_Batch=PlateId,
+                     title=  "d")
+p15 = myBatchPCAPlot(mat=temp_mskcc_fpkm, TCGA_Batch=PlateId,
+                     title=  "e")
+p16 = myBatchPCAPlot(mat=temp_mskcc_batch, TCGA_Batch=PlateId,
+                     title=  "f")
+
+pdf( file.path( results_dir, "pdf", "Supp_Fig3_TCGA_Batch.pdf"), 
+     width =24, height=16)
+mylegend<-g_legend(p11)
+grid.arrange(arrangeGrob(p11 + theme(legend.position="none"),
+                         p12 + theme(legend.position="none"),
+                         p13 + theme(legend.position="none"),
+                         p14 + theme(legend.position="none"),
+                         p15 + theme(legend.position="none"),
+                         p16 + theme(legend.position="none"),
+                         nrow=2,
+                         top=textGrob("")),
+             mylegend,  nrow=2, heights=c(14,2)) 
+dev.off()
+```
+
+## Make PCA plot using PlateID as "Batch variable" for each cancer type.
+
+```{r}
+pdf(file.path( results_dir, "pdf", "Supp_PCA_PlateID_batch_Binder.pdf"), 
+  width =24, height=16)
+r2 =lapply(types, function(x){
+  idx = which(colData(tcga_piccolo)[,2]==x)
+
+  temp_gdc=gdc_mat[ ,idx]
+  temp_xena=xena_mat[ ,idx]
+  temp_gse62944=piccolo_mat[ ,idx]
+  temp_recount2=recount2_mat[,idx]
+  temp_mskcc_fpkm=mskcc_norm_mat[ ,idx]
+  temp_mskcc_batch=mskcc_batch_mat[ ,idx]
+
+  PlateId=substr(colnames(temp_gdc) ,22 ,25)
+  
+  p11 = myBatchPCAPlot(mat=temp_gdc, TCGA_Batch=PlateId,
+                     title= "GDC")
+  p12= myBatchPCAPlot(mat=temp_xena, TCGA_Batch=PlateId,
+                       title=  "Xena")
+  p13 = myBatchPCAPlot(mat=temp_gse62944, TCGA_Batch=PlateId,
+                       title= "Piccolo")
+  p14 = myBatchPCAPlot(mat=temp_recount2, TCGA_Batch=PlateId,
+                       title=  "Recount2")
+  p15 = myBatchPCAPlot(mat=temp_mskcc_fpkm, TCGA_Batch=PlateId,
+                       title=  "MSKCC")
+  p16 = myBatchPCAPlot(mat=temp_mskcc_batch, TCGA_Batch=PlateId,
+                       title=  "MSKCC Batch")
+  mylegend<-g_legend(p11)
+  grid.arrange(arrangeGrob(p11 + theme(legend.position="none"),
+                           p12 + theme(legend.position="none"),
+                           p13 + theme(legend.position="none"),
+                           p14 + theme(legend.position="none"),
+                           p15 + theme(legend.position="none"),
+                           p16 + theme(legend.position="none"),
+                           nrow=2, 
+                           top=textGrob(paste0("TCGA-",x," Batch Plots-Plate ID"))),
+               mylegend, nrow=2,heights=c(10,2))
+})
+dev.off()
+
+```
+
+## Make PCA plot using TSS as "Batch variable" for each cancer type.
+
+```{r}
+pdf(file.path( results_dir, "pdf", "Supp_TCGA_PCA_TSS_batch_Binder.pdf"), 
+    width =24, height=16)
+r1= lapply(types, function(x){
+  idx = which(colData(tcga_piccolo)[,2]==x)
+
+  temp_gdc=gdc_mat[ ,idx]
+  temp_xena=xena_mat[ ,idx]
+  temp_gse62944=piccolo_mat[ ,idx]
+  temp_recount2=recount2_mat[,idx]
+  temp_mskcc_fpkm=mskcc_norm_mat[ ,idx]
+  temp_mskcc_batch=mskcc_batch_mat[ ,idx]
+
+  tssID=substr(colnames(temp_gdc) ,6 ,7)
+
+  p11 = myBatchPCAPlot(mat=temp_gdc, TCGA_Batch=tssID,
+                     title= "GDC")
+  p12= myBatchPCAPlot(mat=temp_xena, TCGA_Batch=tssID,
+                       title=  "Xena")
+  p13 = myBatchPCAPlot(mat=temp_gse62944, TCGA_Batch=tssID,
+                       title= "Piccolo")
+  p14 = myBatchPCAPlot(mat=temp_recount2, TCGA_Batch=tssID,
+                       title=  "Recount2")
+  p15 = myBatchPCAPlot(mat=temp_mskcc_fpkm, TCGA_Batch=tssID,
+                       title=  "MSKCC")
+  p16 = myBatchPCAPlot(mat=temp_mskcc_batch, TCGA_Batch=tssID,
+                       title=  "MSKCC Batch")
+
+  mylegend<-g_legend(p11)
+  grid.arrange(arrangeGrob(p11 + theme(legend.position="none"),
+                           p12 + theme(legend.position="none"),
+                           p13 + theme(legend.position="none"),
+                           p14 + theme(legend.position="none"),
+                           p15 + theme(legend.position="none"),
+                           p16 + theme(legend.position="none"),
+                           ncol=2,
+                           top=textGrob(paste0("TCGA-",x," Batch Plots- TSS ID"))),
+               mylegend, ncol=2,heights=c(15,5))
+
+})
+dev.off()
+```
+
+## Make PCA plot using Sequencing Center as "Batch variable" for each cancer type.
+```{r}
+pdf(file.path( results_dir, "pdf", "Supp_TCGA_PCA_Sequening center_Batch_Binder.pdf"), 
+    width =24, height=16)
+r1= lapply(types, function(x){
+  idx = which(colData(tcga_piccolo)[,2]==x)
+
+  temp_gdc=gdc_mat[ ,idx]
+  temp_xena=xena_mat[ ,idx]
+  temp_gse62944=piccolo_mat[ ,idx]
+  temp_recount2=recount2_mat[,idx]
+  temp_mskcc_fpkm=mskcc_norm_mat[ ,idx]
+  temp_mskcc_batch=mskcc_batch_mat[ ,idx]
+
+  seqID=substr(colnames(temp_gdc) ,27 ,28)
+
+  p11 = myBatchPCAPlot(mat=temp_gdc, TCGA_Batch=seqID,
+                     title= "GDC")
+  p12= myBatchPCAPlot(mat=temp_xena, TCGA_Batch=seqID,
+                       title=  "Xena")
+  p13 = myBatchPCAPlot(mat=temp_gse62944, TCGA_Batch=seqID,
+                       title= "Piccolo")
+  p14 = myBatchPCAPlot(mat=temp_recount2, TCGA_Batch=seqID,
+                       title=  "Recount2")
+  p15 = myBatchPCAPlot(mat=temp_mskcc_fpkm, TCGA_Batch=seqID,
+                       title=  "MSKCC")
+  p16 = myBatchPCAPlot(mat=temp_mskcc_batch, TCGA_Batch=seqID,
+                       title=  "MSKCC Batch")
+
+  mylegend<-g_legend(p11)
+  grid.arrange(arrangeGrob(p11 + theme(legend.position="none"),
+                           p12 + theme(legend.position="none"),
+                           p13 + theme(legend.position="none"),
+                           p14 + theme(legend.position="none"),
+                           p15 + theme(legend.position="none"),
+                           p16 + theme(legend.position="none"),
+                           nrow=2,
+                           top=textGrob(paste0("TCGA-",x," Batch Plots- Sequencing Center ID"))),
+               mylegend, nrow=2,heights=c(10,2))
+
+})
+dev.off()
+```
+
+

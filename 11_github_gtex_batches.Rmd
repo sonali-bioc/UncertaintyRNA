@@ -1,0 +1,188 @@
+---
+title: "Batches in GTEx Data"
+author: "Sonali Arora, Hamid Bolouri"
+date: "October 1, 2018"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+## Introduction 
+
+Sample batch information can be obtained from the GTEx website, namely,  nucleic 
+acid isolation batch, genotype and expression batch). In the following vignette, 
+we take the GTEx data from all sources to see if batch effects exist in the GTEx
+data. 
+
+
+```{r gtex-batch}
+
+rm(list=ls())
+
+library(grid)
+library(gridExtra)
+library(ggplot2)
+
+s1 = 3 # size for points in PCA plot
+legend_pt_size =4
+plot_title_size = 25
+axis_text_size = 25
+axis_title_size=25
+legend_text_size=20
+spacing=0.3
+chosen_margin = c(0.5,1,0.5,1)# margins:top,right,bottom,left
+text_size =10
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+if(!file.exists( file.path( results_dir))){
+   system(paste0("mkdir ", results_dir))
+}
+if(!file.exists( file.path( results_dir, "pdf"))){
+   system(paste0("mkdir ", file.path(results_dir, "pdf")))
+}
+if(!file.exists(file.path(s3_dir, "SE_objects"))){
+  stop("Please go through vignette 3 & 4 to make SE objects or download from S3 bucket")
+}
+
+
+gtex_batch_fls = file.path( git_dir, "data","pca_data", 
+  "Fig1_PCA_Data_GTEX_all_datasets_TPM.txt")
+gtex_types_fls = file.path( git_dir, "data", "tables", "Supp_Table_GTEX_Types.txt")
+gtex_tpm_percentVar = file.path(git_dir, "data","pca_data", 
+  "percentVar_GTEX_all_datasets_TPM.txt")
+
+types = read.delim(gtex_types_fls, header=TRUE, stringsAsFactors = FALSE)
+gtex_pc_data_all = read.delim(gtex_batch_fls, header=TRUE, 
+                              stringsAsFactors = FALSE)
+
+#percentVar =  c(13.62, 10.42)
+percentVar =read.delim( gtex_tpm_percentVar, header=FALSE, 
+                          stringsAsFactors = FALSE)[,1]
+
+gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="XENA_Toil")]="XENA-Toil"
+gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="MSKCC_Norm")]="MSKCC-Normalized"
+gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="MSKCC_BATCH")]="MSKCC-Batch"
+
+b1 = types[match(gtex_pc_data_all$sampleName, types[,"sampleName"]), "SMNABTCH"]
+gtex_pc_data_all$nucelic_batch = b1
+
+b2 = types[match(gtex_pc_data_all$sampleName, types[,"sampleName"]), "SMGEBTCH"]
+gtex_pc_data_all$genotype_batch =b2
+```
+
+## Nucleic Acid Batches in GTEx Data
+
+```{r}
+nuc_batches = unique(b1)
+nuc_plot = lapply(nuc_batches, function(x){
+  gtex_pc_data_all$nucelic_batch_v2 = rep("Other Batches", nrow(gtex_pc_data_all))
+  i1 = grep(paste0("^",x,"$"), gtex_pc_data_all$nucelic_batch)
+  gtex_pc_data_all$nucelic_batch_v2[i1] = x
+
+  gtex_pc_data_all$nucelic_batch_v2 = factor( gtex_pc_data_all$nucelic_batch_v2,
+                                              levels = c("Other Batches", x))
+
+  p1 = ggplot(gtex_pc_data_all, aes(PC1, PC2, color=nucelic_batch_v2)) +
+    geom_point(aes(size = nucelic_batch_v2, alpha = nucelic_batch_v2)) +
+    xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+    ylab(paste0("PC2: ",percentVar[2],"% variance")) +
+    theme_bw(base_family="Helvetica") +
+    theme(plot.title = element_text(lineheight=.8, face="bold", size=plot_title_size),
+          plot.margin=unit(chosen_margin,"cm"), 
+          axis.text=element_text(size=axis_text_size),
+          axis.title=element_text(size=axis_title_size),
+          legend.title = element_blank(),
+          legend.text=element_text(size=legend_text_size),
+          legend.key.height = unit(spacing, "cm"),
+          legend.position = "bottom") +
+    guides(colour = guide_legend(override.aes = list(
+      size=legend_pt_size, alpha=1))
+    ) +
+    scale_color_manual(breaks=c( "Other Batches", x),
+                       values=c( "grey60", "red")) +
+    scale_size_manual(breaks=c( "Other Batches", x),
+                      values=c( 1.5, 3))+
+    scale_alpha_manual(breaks=c( "Other Batches", x),
+                       values=c( 0.2, 1))
+  p1
+})
+```
+
+## Genotype Batches in GTEx Data
+
+```{r}
+geno_batch = unique(b2)
+geno_plot = lapply(geno_batch, function(x){
+  gtex_pc_data_all$genotype_batch_v2 = rep("Other Batches", nrow(gtex_pc_data_all))
+  i1 = grep(paste0("^",x,"$"), gtex_pc_data_all$genotype_batch)
+  gtex_pc_data_all$genotype_batch_v2[i1] = x
+
+  gtex_pc_data_all$genotype_batch_v2 = factor( gtex_pc_data_all$genotype_batch_v2,
+                                               levels = c("Other Batches", x))
+
+  p1 = ggplot(gtex_pc_data_all, aes(PC1, PC2, color=genotype_batch_v2)) +
+    geom_point(aes(size = genotype_batch_v2, alpha = genotype_batch_v2)) +
+    xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+    ylab(paste0("PC2: ",percentVar[2],"% variance")) +
+    theme_bw(base_family="Helvetica") +
+    theme(plot.title = element_text(lineheight=.8, face="bold", size=plot_title_size),
+          plot.margin=unit(chosen_margin,"cm"), 
+          axis.text=element_text(size=axis_text_size),
+          axis.title=element_text(size=axis_title_size),
+          legend.title =element_blank(),
+          legend.text=element_text(size=legend_text_size),
+          legend.key.height = unit(spacing, "cm"),
+          legend.position = "bottom") +
+    guides(colour = guide_legend(override.aes = list(
+      size=legend_pt_size, alpha=1))
+    ) +
+    scale_color_manual(breaks=c( "Other Batches", x),
+                       values=c( "grey60", "darkmagenta")) +
+    scale_size_manual(breaks=c( "Other Batches", x),
+                      values=c( 1.5, 3))+
+    scale_alpha_manual(breaks=c( "Other Batches", x),
+                       values=c( 0.2, 1))
+  p1
+})
+
+```
+
+## Supplemental Figure for GTEx Batches
+
+```{r}
+pdf(file.path( results_dir, "pdf", "Supp_Fig4_select_GTEx_batches.pdf"), 
+    width=24, height=16)
+lst = list(nuc_plot[[1]] + ggtitle("a"), 
+           nuc_plot[[2]] + ggtitle("b"), 
+           nuc_plot[[3]] + ggtitle("c"), 
+           geno_plot[[1]]+ ggtitle("d"), 
+           geno_plot[[2]]+ ggtitle("e"), 
+           geno_plot[[3]]+ ggtitle("f"),
+           textGrob(""))
+layout = rbind( c(1, 2, 3), c(4, 5, 6))
+marrangeGrob(lst, layout_matrix = layout, top=textGrob(""))
+dev.off()
+
+pdf(file.path( results_dir, "pdf", "Supp_GTEx_nucleic_acid_batches.pdf"), 
+    width = 24, height =16)
+marrangeGrob(nuc_plot, nrow=2, ncol=3, top=textGrob(""))
+dev.off()
+
+pdf(file.path( results_dir, "pdf", "Supp_GTEx_genotype_batches.pdf"), 
+    width = 24, height =16)
+marrangeGrob(geno_plot, nrow=2, ncol=3, top=textGrob(""))
+dev.off()
+
+```

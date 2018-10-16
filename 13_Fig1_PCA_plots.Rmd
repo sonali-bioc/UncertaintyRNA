@@ -1,0 +1,373 @@
+---
+title: "PCA plots for various sources of TCGA and GTEx Data"
+author: "Sonali Arora, Hamid Bolouri"
+date: "October 1, 2018"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+## Introduction
+
+In this vignette, we generate Figure 1 of the manuscript.
+
+```{r setup, include=FALSE}
+
+rm(list=ls())
+
+library(grid)
+library(gridExtra)
+library(ggplot2)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+if(!file.exists( file.path(s3_dir, "SE_objects"))){
+  stop("Please go through vignette 3 & 4 to make SE objects or download from S3 bucket")
+}
+if(!file.exists( git_dir)){
+  stop("Please clone from github")
+}
+if(!file.exists( file.path( results_dir))){
+   system(paste0("mkdir ", results_dir))
+}
+if(!file.exists( file.path( results_dir, "pdf"))){
+   system(paste0("mkdir ", file.path(results_dir, "pdf")))
+}
+
+gtex_use_cols=c("#7FC97F", "#BEAED4", "#FDC086", "#FFFF99", "#386CB0", "black", 
+                "#BF5B17", "#666666", "#1B9E77", "#D95F02", "#7570B3", "#E7298A",
+                "#66A61E", "#E6AB02", "#A6761D","#e6beff",
+                "#A6CEE3")
+tcga_use_cols = c( "forestgreen", "#000000", "#0082c8", "#aa6e28",
+            "#ffd8b1", "#46f0f0", "#3cb44b", "#808080", "#e6beff",
+            "#d2f53c", "#f032e6", "#800000", "#aaffc3", "#000080",
+            "#808000")
+
+tcga_col_lst = c( "GDC" ="#A3A500",
+                  "Xena" = "orange",
+             "MSKCC" = "darkblue",
+             "MSKCC Batch" ="#00B0F6" ,
+             "Piccolo"= "#E76BF3",
+             Recount2 ="grey45")
+         
+gtex_col_lst = c(  "GTEx" ="darkgreen",
+                   "Xena" = "orange",
+                  "MSKCC" = "darkblue",
+                  "MSKCC Batch" ="#00B0F6" ,
+                  Recount2 ="grey45")
+                
+# define aesthetics for each plot.
+s1 = 2 # size for points in PCA plot
+legend_pt_size =4
+plot_title_size = 25
+axis_text_size = 25
+axis_title_size=25
+legend_text_size=20
+spacing=0.3
+chosen_margin = c(0.5,1,0.5,1)# margins:top,right,bottom,left
+
+git_pca= file.path(git_dir, "data", "pca_data")
+
+# load files
+tcga_types_fls =  file.path( git_dir, "data/tables/Supp_Table_TCGA_Cancer_Types.txt")
+gtex_types_fls =file.path( git_dir,"data/tables/Supp_Table_GTEX_Types.txt")
+
+tcga_rpkm_fls = file.path( git_pca,"Fig1_PCA_Data_TCGA_all_datasets_RPKM.txt")
+gtex_rpkm_fls = file.path( git_pca,"Fig1_PCA_Data_GTEX_all_datasets_RPKM.txt")
+
+tcga_rpkm_percentVar = file.path( git_pca,"percentVar_TCGA_all_datasets_RPKM.txt")
+gtex_rpkm_percentVar = file.path( git_pca,"/percentVar_GTEX_all_datasets_RPKM.txt")
+
+tcga_tpm_fls = file.path( git_pca,"Fig1_PCA_Data_TCGA_all_datasets_TPM.txt")
+gtex_tpm_fls = file.path( git_pca,"Fig1_PCA_Data_GTEX_all_datasets_TPM.txt")
+
+tcga_tpm_percentVar = file.path( git_pca,"percentVar_TCGA_all_datasets_TPM.txt")
+gtex_tpm_percentVar = file.path( git_pca,"percentVar_GTEX_all_datasets_TPM.txt")
+
+check_file = file.exists( c( tcga_types_fls, gtex_types_fls, tcga_rpkm_fls, 
+                            gtex_rpkm_fls, tcga_tpm_fls,gtex_tpm_fls  ))
+if(!all(check_file)){
+  stop("Please run vignettes in sequential order or clone from github!")
+}
+
+```
+
+## PCA using RPKM normalized TCGA Data from each source.  
+
+```{r tcga-rpkm}
+pc_data_all = read.delim(tcga_rpkm_fls, header=T, stringsAsFactors = FALSE)
+pc_data_all$Project[which(pc_data_all$Project=="XENA_Toil")]="Xena"
+pc_data_all$Project[which(pc_data_all$Project=="MSKCC_Norma")]="MSKCC"
+pc_data_all$Project[which(pc_data_all$Project=="MSKCC_BATCH")]="MSKCC Batch"
+pc_data_all$Project[which(pc_data_all$Project=="Piccolo_Lab")]="Piccolo"
+
+types = read.delim(tcga_types_fls, header=TRUE, stringsAsFactors = FALSE)
+
+t1 = types[match(pc_data_all$sampleName, types[,"sampleName"]), "sampleGroup"]
+pc_data_all$TumorType = t1
+
+#percentVar =  c(58.97, 4.04) 
+percentVar =read.delim( tcga_rpkm_percentVar, header=FALSE, 
+                          stringsAsFactors = FALSE)[,1]
+
+pc_data_all$Project = factor(pc_data_all$Project, levels = names(tcga_col_lst))
+pc_data_all$TumorType  = factor(pc_data_all$TumorType)
+
+rpkm1 = ggplot(pc_data_all, aes(PC1, PC2, color=Project)) +
+  geom_point(size=s1, alpha=0.5, shape=21) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) +
+  ggtitle("TCGA Data: By Data Source (RPKM)") +
+  scale_color_manual(name="Project",
+                     breaks=levels(pc_data_all[,"Project"]),
+                     values=tcga_col_lst) 
+
+
+rpkm2 = ggplot(pc_data_all, aes(PC1, PC2, color=TumorType)) +
+  geom_point(size=s1, alpha=0.5, shape=21) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) +
+  ggtitle("TCGA Data: By Tumor Type (RPKM)") +
+  scale_color_manual(name="Tumor Type",
+                     breaks=levels(pc_data_all[,"TumorType"]),
+                     values=tcga_use_cols) 
+```
+
+
+## PCA using RPKM normalized GTEx Data from each source. 
+
+```{r gtex-rpkm}
+gtex_pc_data_all = read.delim(gtex_rpkm_fls, header=TRUE, stringsAsFactors = FALSE)
+
+gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="XENA_Toil")]="Xena"
+gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="MSKCC_Norm")]="MSKCC"
+gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="MSKCC_BATCH")]="MSKCC Batch"
+gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="GTEX-V6")]="GTEx"
+
+types = read.delim(gtex_types_fls, header=TRUE, stringsAsFactors = FALSE)
+types$region = gsub("Esophagus - Gastroesophageal Junction", "Esophagus - Gastroesophageal", types$region)
+types$region = gsub(" - ", "-", types$region)
+types$region = gsub("Breast-Mammary Tissue", "Breast", types$region)
+types$region = gsub("Cervix-Ectocervix", "Cervix-Ecto", types$region)
+types$region = gsub("Cervix-Endocervix", "Cervix-Endo", types$region)
+types$region = gsub("Colon-Sigmoid", "Colon-S", types$region)
+types$region = gsub("Colon-Transverse", "Colon-T", types$region)
+types$region = gsub("Kidney-Cortex", "Kidney", types$region)
+types$region = gsub("Esophagus-Gastroesophageal", "Esophagus-G", types$region)
+types$region = gsub("Esophagus-Mucosa", "Esophagus-M", types$region)
+types$region = gsub("Esophagus-Muscularis", "Esophagus-Mus", types$region)
+types$region = gsub("Minor Salivary Gland", "Salivary", types$region)
+gtex_pc_data_all$Region = types[match(gtex_pc_data_all$sampleName, types[,"sampleName"]), "region"]
+
+#percentVar =  c(61.14, 4.56)
+percentVar =read.delim( gtex_rpkm_percentVar, header=FALSE, 
+                          stringsAsFactors = FALSE)[,1]
+
+gtex_pc_data_all$Project = factor(gtex_pc_data_all$Project, levels = names(gtex_col_lst))
+gtex_pc_data_all$Region  = factor(gtex_pc_data_all$Region, 
+  levels = c("Bladder", "Breast", "Liver", "Lung", 
+             "Cervix-Ecto", "Cervix-Endo", "Colon-S", "Colon-T", 
+             "Esophagus-G", "Esophagus-M", "Esophagus-Mus", "Kidney", 
+              "Prostate", "Salivary", "Stomach", "Thyroid", 
+             "Uterus"))
+
+
+rpkm3 = ggplot(gtex_pc_data_all, aes(PC1, PC2, color=Project)) +
+  geom_point(size=s1, alpha=0.5, shape=21) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) +
+  ggtitle("GTEX Data: By Data Source (FPKM)") +
+  scale_color_manual(name="Project",
+                     breaks=levels(gtex_pc_data_all[,"Project"]),
+                     values=gtex_col_lst) 
+  
+
+ 
+ rpkm4 = ggplot(gtex_pc_data_all, aes(PC1, PC2, color=Region)) +
+   geom_point(size=s1, alpha=0.5, shape=21) +
+   xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+   ylab(paste0("PC2: ",percentVar[2],"% variance")) +
+   ggtitle("GTEX Data: By Region (FPKM)") +
+   scale_color_manual(name="Region",
+                      breaks=levels(gtex_pc_data_all[,"Region"]),
+                      values=gtex_use_cols)
+
+```
+
+## PCA using TPM normalized TCGA Data from each source.  
+
+```{r tcga-tpm}
+pc_data_all = read.delim(tcga_tpm_fls, header=TRUE, stringsAsFactors = FALSE)
+pc_data_all$Project[which(pc_data_all$Project=="XENA_Toil")]="Xena"
+pc_data_all$Project[which(pc_data_all$Project=="MSKCC_Norma")]="MSKCC"
+pc_data_all$Project[which(pc_data_all$Project=="MSKCC_BATCH")]="MSKCC Batch"
+pc_data_all$Project[which(pc_data_all$Project=="Piccolo_Lab")]="Piccolo"
+
+tcga_types = read.delim(tcga_types_fls, header=T, stringsAsFactors = FALSE)
+
+t1 = tcga_types[match(pc_data_all$sampleName, tcga_types[,"sampleName"]), "sampleGroup"]
+pc_data_all$TumorType = t1
+
+#percentVar =  c(9.78, 9.41)
+percentVar =read.delim( tcga_tpm_percentVar, header=FALSE, 
+                          stringsAsFactors = FALSE)[,1]
+pc_data_all$Project = factor(pc_data_all$Project, levels = names(tcga_col_lst))
+pc_data_all$TumorType  = factor(pc_data_all$TumorType)
+
+
+p1 = ggplot(pc_data_all, aes(PC1, PC2, color=Project)) +
+  geom_point(size=s1, alpha=0.5, shape=21) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) +
+  ggtitle("TCGA Data: By Data Source (TPM)") +
+  scale_color_manual(name="Project",
+                     breaks=levels(pc_data_all[,"Project"]),
+                     values=tcga_col_lst) 
+
+
+p2 = ggplot(pc_data_all, aes(PC1, PC2, color=TumorType)) +
+  geom_point(size=s1, alpha=0.5, shape=21) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) +
+  ggtitle("TCGA Data: By Tumor Type (TPM)") +
+  scale_color_manual(name="Tumor Type",
+                     breaks=levels(pc_data_all[,"TumorType"]),
+                     values=tcga_use_cols) 
+
+```
+
+## PCA using TPM normalized GTEx Data from each source.  
+
+```{r gtex-tpm}
+gtex_pc_data_all = read.delim(gtex_tpm_fls, header=T, stringsAsFactors = FALSE)
+
+gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="XENA_Toil")]="Xena"
+gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="MSKCC_Norm")]="MSKCC"
+gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="MSKCC_BATCH")]="MSKCC Batch"
+gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="GTEX-V6")]="GTEx"
+
+types = read.delim(gtex_types_fls,
+                   header=T, stringsAsFactors = FALSE)
+types$region = gsub("Esophagus - Gastroesophageal Junction", "Esophagus - Gastroesophageal", types$region)
+types$region = gsub(" - ", "-", types$region)
+types$region = gsub("Breast-Mammary Tissue", "Breast", types$region)
+types$region = gsub("Cervix-Ectocervix", "C-Ecto", types$region)
+types$region = gsub("Cervix-Endocervix", "C-Endo", types$region)
+types$region = gsub("Colon-Sigmoid", "Colon-S", types$region)
+types$region = gsub("Colon-Transverse", "Colon-T", types$region)
+
+types$region = gsub("Kidney-Cortex", "Kidney", types$region)
+
+types$region = gsub("Esophagus-Gastroesophageal", "Esoph-G", types$region)
+types$region = gsub("Esophagus-Mucosa", "Esoph-M", types$region)
+types$region = gsub("Esophagus-Muscularis", "Esoph-Mus", types$region)
+
+types$region = gsub("Minor Salivary Gland", "Salivary", types$region)
+gtex_pc_data_all$Region = types[match(gtex_pc_data_all$sampleName, types[,"sampleName"]), "region"]
+
+#percentVar =  c(13.62, 10.42)
+percentVar =read.delim( gtex_tpm_percentVar, header=FALSE, 
+                          stringsAsFactors = FALSE)[,1]
+gtex_pc_data_all$Project = factor(gtex_pc_data_all$Project, levels = names(gtex_col_lst))
+gtex_pc_data_all$Region  = factor(gtex_pc_data_all$Region, 
+  levels = c("Bladder", "Breast", "C-Ecto", "C-Endo", 
+             "Colon-S", "Esoph-G", "Esoph-M", "Esoph-Mus", 
+             "Colon-T", "Kidney", "Liver", "Lung", 
+             "Prostate", "Salivary", "Stomach", "Thyroid",  "Uterus"))
+
+p3 = ggplot(gtex_pc_data_all, aes(PC1, PC2, color=Project)) +
+  geom_point(size=s1, alpha=0.5,  shape=21) + #alpha=0.2,
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) +
+  ggtitle("GTEX Data: By Data Source (TPM)") +
+  scale_color_manual(name="Project",
+                     breaks=levels(gtex_pc_data_all[,"Project"]),
+                     values=gtex_col_lst) 
+
+p4 = ggplot(gtex_pc_data_all, aes(PC1, PC2, color=Region)) +
+  geom_point(size=s1, alpha=0.5, shape=21) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) +
+  ggtitle("GTEX Data: By Region (TPM)") +
+  scale_color_manual(name="Region",
+                     breaks=levels(gtex_pc_data_all[,"Region"]),
+                     values=gtex_use_cols) 
+
+```
+
+## Arrange and make Figures
+
+```{r final-fig}
+
+# define aesthetics for each plot.
+s1 = 2 # size for points in PCA plot
+legend_pt_size =4
+plot_title_size = 25
+axis_text_size = 25
+axis_title_size=25
+legend_text_size=25
+spacing=0.3
+chosen_margin = c(0.5,1,0.5,1)# margins:top,right,bottom,left
+
+
+theme_sa <- theme_bw(base_family="Helvetica") +
+        theme(
+        plot.title = element_text(hjust=0, vjust=0, 
+            lineheight=.8, face="bold", size=plot_title_size ),
+        plot.margin=unit(chosen_margin,"cm"), 
+        axis.text=element_text(size=axis_text_size),
+        axis.title=element_text(size=axis_title_size),
+        legend.text=element_text(size=legend_text_size),
+        legend.key.height = unit(spacing, "cm"),
+        legend.position = "bottom",
+        legend.justification = 'left',
+        legend.title=element_blank() )
+         
+  
+
+final_rpkm1 = rpkm1 + theme_sa+ ggtitle("a ") + 
+  guides( color = guide_legend(override.aes =
+            list(alpha = 1, size=legend_pt_size, shape=16)))
+
+final_rpkm3= rpkm3+ theme_sa+ ggtitle("b ") + 
+  guides( color = guide_legend(ncol =3, override.aes =
+            list(alpha = 1, size=legend_pt_size, shape=16)))
+
+final_p1= p1 + theme_sa+ ggtitle("c ") + 
+  guides( color = guide_legend(override.aes =
+            list(alpha = 1, size=legend_pt_size, shape=16)))
+
+final_p3= p3 + theme_sa+ ggtitle("d ") + 
+  guides( color = guide_legend(ncol =3, override.aes =
+            list(alpha = 1, size=legend_pt_size, shape=16)))
+
+final_p2= p2 + theme_sa+ ggtitle("e ") + 
+  guides( color = guide_legend(override.aes =
+            list(alpha = 1, size=legend_pt_size, shape=16)))
+
+final_p4= p4  + theme_sa + ggtitle("f ") +
+  guides( color = guide_legend(nrow=5, override.aes =
+            list(alpha = 1, size=legend_pt_size, shape=16)))
+
+pdf(file.path(results_dir, "pdf", "Fig1.pdf"), width = 24, height =16)
+nat1 = list(final_rpkm1 ,final_rpkm3,
+            final_p1, final_p3,
+             final_p2, final_p4)
+marrangeGrob(nat1, nrow=2, ncol=3, top="")
+dev.off()
+
+
+
+```
+

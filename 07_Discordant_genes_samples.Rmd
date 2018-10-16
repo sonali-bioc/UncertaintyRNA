@@ -1,0 +1,474 @@
+---
+title: "Discordant Genes across various sources of Data"
+author: "Sonali Arora, Hamid Bolouri"
+date: "October 1, 2018"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+## Introduction 
+
+First, we will calculate the Discordant genes and samples for GTEx Data, 
+followed by calculation of discordant genes and samples for TCGA data. For a 
+gene to be discordant, expression of gene in 1 data set should be more than 
+32 TPM (i.e. log2 TPM more than 5) and the log2 fold change should be more 
+than 2 (i.e. >4-fold difference in expression). 
+
+## Discordant Genes in GTEx
+
+```{r gtex-calculation}
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(SummarizedExperiment)
+  library(Hmisc)
+  library(ggplot2)
+  library(pheatmap)
+  library(RColorBrewer)
+  library(eulerr)
+  library(UpSetR)
+  library(grid)
+  library(gridExtra)
+})
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+
+if(!file.exists( file.path(s3_dir, "SE_objects"))){
+  stop("Please go through vignette 3 & 4 to make SE objects or download from S3 bucket")
+}
+if(!file.exists( file.path( results_dir))){
+   system(paste0("mkdir ", results_dir))
+}
+if(!file.exists( file.path( results_dir,"discordant"))){
+  system(paste0("mkdir ", file.path(results_dir, "discordant")))
+}
+
+if(!file.exists( file.path( results_dir, "pdf"))){
+   system(paste0("mkdir ", file.path(results_dir, "pdf")))
+}
+
+if(!file.exists( file.path( results_dir, "tables"))){
+   system(paste0("mkdir ", file.path(results_dir, "tables")))
+}
+
+tcga_gdc <- get(load( file.path( s3_dir, "SE_objects","tcga_gdc_log2_TPM.RData")))
+tcga_mskcc_norm <- get(load( file.path( s3_dir, "SE_objects", "tcga_mskcc_norm_log2_TPM.RData")))
+tcga_mskcc_batch <- get(load( file.path( s3_dir, "SE_objects", "tcga_mskcc_batch_log2_TPM.RData")))
+tcga_recount2 <- get(load( file.path( s3_dir, "SE_objects", "tcga_recount2_log2_TPM.RData")))
+tcga_xena <- get(load( file.path( s3_dir, "SE_objects", "tcga_xena_log2_TPM.RData")))
+tcga_piccolo <- get(load( file.path( s3_dir, "SE_objects","tcga_piccolo_log2_TPM.RData")))
+
+gtex_v6 <- get(load( file.path( s3_dir, "SE_objects","gtex_v6_log2_TPM.RData")))
+gtex_mskcc_norm <- get(load( file.path( s3_dir, "SE_objects","gtex_mskcc_norm_log2_TPM.RData")))
+gtex_mskcc_batch <- get(load( file.path( s3_dir, "SE_objects","gtex_mskcc_batch_log2_TPM.RData")))
+gtex_recount2 <- get(load( file.path( s3_dir, "SE_objects", "gtex_recount2_log2_TPM.RData")))
+gtex_xena <- get(load( file.path( s3_dir, "SE_objects","gtex_xena_log2_TPM.RData")))
+
+
+multi_mapping_genes = read.delim(
+  file.path(git_dir,"data","extdata","RNAseq_countingErrors_958BadGenes.txt"), 
+                                 header=TRUE,  stringsAsFactors = FALSE)
+disease = read.delim(
+  file.path(git_dir, "data","extdata", "curated_gene_disease_associations.tsv"),
+                header=TRUE, stringsAsFactors=FALSE)
+
+gtex_v6_mat = assay(gtex_v6)
+mskcc_fpkm_mat=assay(gtex_mskcc_norm)
+mskcc_batch_mat=assay(gtex_mskcc_batch)
+recount2_mat=assay(gtex_recount2)
+xena_mat= assay(gtex_xena)
+
+geneName = rownames(gtex_v6)
+
+m = 5 # pairwise max of 2 vectors.
+lf = 2; fold_no = "4fold" #log2(4 +0.01) ; 
+#lf = 1; fold_no ="2fold"
+#lf=1.584; fold_no = "3fold"
+
+mismatch_genes_GTEX = sapply( 1:  nrow(gtex_v6_mat), function(idx){
+  temp_gtex=gtex_v6_mat[idx, ]
+  temp_mskcc_fpkm=mskcc_fpkm_mat[idx, ]
+  temp_recount2=recount2_mat[idx, ]
+  temp_xena=xena_mat[idx, ]
+  
+  diff_no = length(unique( c(
+    which(abs(temp_gtex- temp_xena) >= lf & pmax(temp_gtex, temp_xena) >= m   ),
+    which(abs(temp_gtex- temp_recount2) >= lf & pmax(temp_gtex, temp_recount2) >= m ),
+    which(abs(temp_gtex- temp_mskcc_fpkm) >= lf & pmax(temp_gtex, temp_mskcc_fpkm) >= m ),
+    
+    which(abs(temp_xena- temp_recount2) >=  lf & pmax(temp_recount2, temp_xena) >= m ),
+    which(abs(temp_xena- temp_mskcc_fpkm) >= lf & pmax(temp_mskcc_fpkm, temp_xena) >= m ),
+    
+    which(abs(temp_recount2- temp_mskcc_fpkm) >= lf  & pmax(temp_recount2, temp_mskcc_fpkm) >= m)
+  )))
+  diff_no
+})
+names(mismatch_genes_GTEX) = geneName
+gtex_bad_genes = names(which(mismatch_genes_GTEX >=19))
+gtex_allgenes = geneName
+
+mismatch_table_GTEX = sapply(1:nrow(gtex_v6_mat), function(idx){
+  temp_gtexV6 = gtex_v6_mat[idx, ]
+  temp_mskcc_fpkm = mskcc_fpkm_mat[idx, ]
+  temp_recount2 = recount2_mat[idx, ]
+  temp_xena = xena_mat[idx, ]
+
+  diffTbl = c(
+    length(which(abs(temp_gtexV6- temp_xena) > lf & pmax(temp_gtexV6, temp_xena) > m)),
+    length(which(abs(temp_gtexV6- temp_recount2) > lf & pmax(temp_gtexV6, temp_recount2) > m)),
+    length(which(abs(temp_gtexV6- temp_mskcc_fpkm) > lf & pmax(temp_gtexV6, temp_mskcc_fpkm) > m)),
+
+    length(which(abs(temp_xena- temp_recount2) > lf & pmax(temp_recount2, temp_xena) > m)),
+     length(which(abs(temp_xena- temp_mskcc_fpkm) > lf & pmax(temp_mskcc_fpkm, temp_xena) > m)),
+
+    length(which(abs(temp_recount2- temp_mskcc_fpkm) > lf  & pmax(temp_recount2, temp_mskcc_fpkm) > m))   )
+})
+mismatch_table_GTEX <- t(mismatch_table_GTEX)
+rownames(mismatch_table_GTEX) = geneName
+colnames(mismatch_table_GTEX) = c('gtexV6-xena', 'gtexV6-recount', 'gtexV6-mskcc',
+                          'xena-recount', 'xena-mskcc', 'recount-mskcc')
+gtexTbl <-mismatch_table_GTEX[gtex_bad_genes, ]
+
+
+mismatchGenesByDataset = sapply( 1:  nrow(gtex_v6_mat), function(idx){
+  temp_gtex=gtex_v6_mat[idx, ]
+  temp_mskcc_fpkm=mskcc_fpkm_mat[idx, ]
+  temp_recount2=recount2_mat[idx, ]
+  temp_xena=xena_mat[idx, ]
+
+  gtex_no = length(unique( c(
+    which(abs(temp_gtex- temp_xena) > lf & pmax(temp_gtex, temp_xena) > m   ), 
+    which(abs(temp_gtex- temp_recount2) > lf & pmax(temp_gtex, temp_recount2) > m ), 
+    which(abs(temp_gtex- temp_mskcc_fpkm) > lf & pmax(temp_gtex, temp_mskcc_fpkm) > m )
+
+  )))
+
+  xena_no = length(unique( c(
+    which(abs(temp_xena- temp_gtex) > lf  & pmax(temp_gtex, temp_xena) > m ), 
+    which(abs(temp_xena- temp_recount2) > lf & pmax(temp_recount2, temp_xena) > m ),
+    which(abs(temp_xena- temp_mskcc_fpkm) > lf & pmax(temp_mskcc_fpkm, temp_xena) > m )
+  )))
+
+
+  recount2_no = length(unique( c(
+
+    which(abs(temp_recount2- temp_gtex) > lf   & pmax(temp_recount2, temp_gtex) > m),
+    which(abs(temp_recount2- temp_xena) > lf  & pmax(temp_recount2, temp_xena) > m),
+    which(abs(temp_recount2- temp_mskcc_fpkm) > lf  & pmax(temp_recount2, temp_mskcc_fpkm) > m)
+  )))
+
+
+  norm_no = length(unique( c(
+    which(abs(temp_mskcc_fpkm- temp_gtex) > lf & pmax(temp_mskcc_fpkm, temp_gtex) > m ),
+    which(abs(temp_mskcc_fpkm- temp_xena) > lf & pmax(temp_mskcc_fpkm, temp_xena) > m),
+    which(abs(temp_mskcc_fpkm- temp_recount2) > lf & pmax(temp_mskcc_fpkm, temp_recount2) > m)
+    )))
+
+
+  c( gtex_no, xena_no, recount2_no,  norm_no) #, batch_no)
+
+})
+
+mismatchGenesByDataset= t(mismatchGenesByDataset)
+rownames(mismatchGenesByDataset) = geneName
+colnames(mismatchGenesByDataset) = c( "gtex_no", "xena_no", "recount2_no", "norm_no")
+
+
+gtex_lst =  list(
+  gtex_genes = rownames(mismatchGenesByDataset[which( mismatchGenesByDataset[,"gtex_no"] >= 19), ]),
+  norm_genes = rownames(mismatchGenesByDataset[which( mismatchGenesByDataset[,"norm_no"] >= 19), ]),
+  recount2_genes = rownames(mismatchGenesByDataset[which( mismatchGenesByDataset[,"recount2_no"] >= 19), ]),
+  xena_genes = rownames(mismatchGenesByDataset[which( mismatchGenesByDataset[,"xena_no"] >= 19), ])
+)
+
+
+# clear some objects that we don't need: 
+rm(gtex_v6)
+rm(gtex_mskcc_norm)
+rm(gtex_mskcc_batch)
+rm(gtex_recount2)
+rm(gtex_xena)
+
+rm(gtex_v6_mat)
+rm(mskcc_fpkm_mat) 
+rm(mskcc_batch_mat) 
+rm(recount2_mat)
+rm(xena_mat) 
+
+rm(mismatch_genes_GTEX)
+rm(mismatch_table_GTEX)
+
+```
+
+## Discordant Genes in TCGA
+
+```{r tcga-calculation}
+geneName = rownames(tcga_gdc)
+
+gdc_mat = assay(tcga_gdc)
+mskcc_fpkm_mat=assay(tcga_mskcc_norm)
+mskcc_batch_mat=assay(tcga_mskcc_batch)
+piccolo_mat=assay(tcga_piccolo)
+recount2_mat=assay(tcga_recount2)
+xena_mat= assay(tcga_xena)
+
+mismatch_genes_TCGA = sapply( 1:  nrow(gdc_mat), function(idx){
+  temp_gdc=gdc_mat[idx, ]
+  temp_piccolo=piccolo_mat[idx, ]
+  temp_mskcc_batch=mskcc_batch_mat[idx, ]
+  temp_mskcc_fpkm=mskcc_fpkm_mat[idx, ]
+  temp_recount2=recount2_mat[idx, ]
+  temp_xena=xena_mat[idx, ]
+  
+  diff_no = length(unique( c(
+    which(abs(temp_gdc- temp_xena) > lf & pmax(temp_gdc, temp_xena) > m   ),
+    which(abs(temp_gdc- temp_recount2) > lf & pmax(temp_gdc, temp_recount2) > m ),
+    which(abs(temp_gdc- temp_mskcc_fpkm) > lf & pmax(temp_gdc, temp_mskcc_fpkm) > m ),
+    which(abs(temp_gdc- temp_piccolo) > lf & pmax(temp_gdc, temp_piccolo) > m ),
+    
+    which(abs(temp_xena- temp_recount2) > lf & pmax(temp_recount2, temp_xena) > m ),
+    which(abs(temp_xena- temp_piccolo) > lf & pmax(temp_piccolo, temp_xena) > m ),
+    which(abs(temp_xena- temp_mskcc_fpkm) > lf & pmax(temp_mskcc_fpkm, temp_xena) > m ),
+    
+    which(abs(temp_recount2- temp_piccolo) > lf  & pmax(temp_recount2, temp_piccolo) > m),
+    which(abs(temp_recount2- temp_mskcc_fpkm) > lf  & pmax(temp_recount2, temp_mskcc_fpkm) > m),
+    
+   which(abs(temp_mskcc_fpkm- temp_piccolo) > lf & pmax(temp_mskcc_fpkm, temp_piccolo) > m)
+    
+  )))
+  diff_no
+})
+names(mismatch_genes_TCGA) = geneName
+tcga_bad_genes= names(which(mismatch_genes_TCGA > 48))
+tcga_allgenes = geneName
+
+mismatch_table_TCGA = sapply(1:nrow(gdc_mat), function(idx){
+  temp_gdc = gdc_mat[idx, ]
+  temp_piccolo = piccolo_mat[idx, ]
+  temp_mskcc_batch = mskcc_batch_mat[idx, ]
+  temp_mskcc_fpkm = mskcc_fpkm_mat[idx, ]
+  temp_recount2 = recount2_mat[idx, ]
+  temp_xena = xena_mat[idx, ]
+
+  diffTbl = c(
+    length(which(abs(temp_gdc- temp_xena) > lf & pmax(temp_gdc, temp_xena) > m)),
+    length(which(abs(temp_gdc- temp_recount2) > lf & pmax(temp_gdc, temp_recount2) > m)),
+    length(which(abs(temp_gdc- temp_mskcc_fpkm) > lf & pmax(temp_gdc, temp_mskcc_fpkm) > m)),
+    length(which(abs(temp_gdc- temp_piccolo) > lf & pmax(temp_gdc, temp_piccolo) > m)),
+
+    length(which(abs(temp_xena- temp_recount2) > lf & pmax(temp_recount2, temp_xena) > m)),
+    length(which(abs(temp_xena- temp_piccolo) > lf & pmax(temp_piccolo, temp_xena) > m)),
+    length(which(abs(temp_xena- temp_mskcc_fpkm) > lf & pmax(temp_mskcc_fpkm, temp_xena) > m)),
+
+    length(which(abs(temp_recount2- temp_piccolo) > lf  & pmax(temp_recount2, temp_piccolo) > m)),
+    length(which(abs(temp_recount2- temp_mskcc_fpkm) > lf  & pmax(temp_recount2, temp_mskcc_fpkm) > m)),
+
+    length(which(abs(temp_mskcc_fpkm- temp_piccolo) > lf & pmax(temp_mskcc_fpkm, temp_piccolo) > m))
+  )
+ 
+})
+mismatch_table_TCGA <- t(mismatch_table_TCGA)
+rownames(mismatch_table_TCGA) = geneName
+colnames(mismatch_table_TCGA) = c('gdc-xena', 'gdc-recount', 'gdc-mskcc', 'gdc-piccolo',
+                                'xena-recount', 'xena-piccolo', 'xena-mskcc',
+                                'recount-piccolo', 'recount-mskcc', 'mskcc-piccolo')
+tcgaTbl <-mismatch_table_TCGA[tcga_bad_genes, ]
+
+
+
+mismatchGenesByDataset = sapply( 1:  nrow(gdc_mat), function(idx){
+  temp_gdc=gdc_mat[idx, ]
+  temp_piccolo=piccolo_mat[idx, ]
+  temp_mskcc_fpkm=mskcc_fpkm_mat[idx, ]
+  temp_recount2=recount2_mat[idx, ]
+  temp_xena=xena_mat[idx, ]
+
+  gdc_no = length(unique( c(
+    which(abs(temp_gdc- temp_xena) > lf & pmax(temp_gdc, temp_xena) > m   ), 
+    which(abs(temp_gdc- temp_recount2) > lf & pmax(temp_gdc, temp_recount2) > m ),     
+    which(abs(temp_gdc- temp_mskcc_fpkm) > lf & pmax(temp_gdc, temp_mskcc_fpkm) > m ),
+    which(abs(temp_gdc- temp_piccolo) > lf & pmax(temp_gdc, temp_piccolo) > m )
+    
+  )))
+
+  xena_no = length(unique( c(
+    which(abs(temp_xena- temp_gdc) > lf  & pmax(temp_gdc, temp_xena) > m ), 
+    which(abs(temp_xena- temp_recount2) > lf & pmax(temp_recount2, temp_xena) > m ), 
+    which(abs(temp_xena- temp_piccolo) > lf & pmax(temp_piccolo, temp_xena) > m ),
+    which(abs(temp_xena- temp_mskcc_fpkm) > lf & pmax(temp_mskcc_fpkm, temp_xena) > m )
+  )))
+
+
+  recount2_no = length(unique( c(
+
+    which(abs(temp_recount2- temp_gdc) > lf   & pmax(temp_recount2, temp_gdc) > m),
+    which(abs(temp_recount2- temp_xena) > lf  & pmax(temp_recount2, temp_xena) > m),
+    which(abs(temp_recount2- temp_piccolo) > lf  & pmax(temp_recount2, temp_piccolo) > m),
+    which(abs(temp_recount2- temp_mskcc_fpkm) > lf  & pmax(temp_recount2, temp_mskcc_fpkm) > m)
+  )))
+
+  norm_no = length(unique( c(
+    which(abs(temp_mskcc_fpkm- temp_gdc) > lf & pmax(temp_mskcc_fpkm, temp_gdc) > m ),
+    which(abs(temp_mskcc_fpkm- temp_xena) > lf & pmax(temp_mskcc_fpkm, temp_xena) > m),
+    which(abs(temp_mskcc_fpkm- temp_piccolo) > lf & pmax(temp_mskcc_fpkm, temp_piccolo) > m),
+    which(abs(temp_mskcc_fpkm- temp_recount2) > lf & pmax(temp_mskcc_fpkm, temp_recount2) > m)
+  )))
+
+  piccolo_no = length(unique( c(
+
+    which(abs(temp_piccolo- temp_gdc) > lf & pmax(temp_piccolo, temp_gdc) > m),
+    which(abs(temp_piccolo- temp_xena) > lf & pmax(temp_piccolo, temp_xena) > m),
+    which(abs(temp_piccolo- temp_mskcc_fpkm) > lf & pmax(temp_piccolo, temp_mskcc_fpkm) > m),
+    which(abs(temp_piccolo- temp_recount2) > lf & pmax(temp_piccolo, temp_recount2) > m)
+  )))
+  c( gdc_no, xena_no, recount2_no, piccolo_no, norm_no) 
+
+})
+
+mismatchGenesByDataset= t(mismatchGenesByDataset)
+rownames(mismatchGenesByDataset) = geneName
+colnames(mismatchGenesByDataset) = c( "gdc_no", "xena_no", 
+                                      "recount2_no", "piccolo_no", "norm_no") 
+
+
+tcga_lst =  list(
+  gdc_genes = rownames(mismatchGenesByDataset[which( mismatchGenesByDataset[,"gdc_no"] > 48), ]),
+  norm_genes = rownames(mismatchGenesByDataset[which( mismatchGenesByDataset[,"norm_no"] > 48), ]),
+  recount2_genes = rownames(mismatchGenesByDataset[which( mismatchGenesByDataset[,"recount2_no"] > 48), ]),
+  xena_genes = rownames(mismatchGenesByDataset[which( mismatchGenesByDataset[,"xena_no"] > 48), ]),
+  piccolo_genes = rownames(mismatchGenesByDataset[which( mismatchGenesByDataset[,"piccolo_no"] > 48), ])
+)
+
+# clear some objects and free memory 
+rm(gdc_mat)
+rm(piccolo_mat)
+rm(mskcc_batch_mat)
+rm(mskcc_fpkm_mat)
+rm(recount2_mat)
+rm(xena_mat)
+
+rm(tcga_gdc)
+rm(tcga_mskcc_norm) 
+rm(tcga_mskcc_batch) 
+rm(tcga_recount2)
+rm(tcga_xena)
+rm(tcga_piccolo)
+
+rm(mismatch_genes_TCGA)
+rm(mismatch_table_TCGA)
+
+```
+
+## Calculate Percentage of Discordant Genes
+
+```{r}
+
+length(gtex_bad_genes)
+length(gtex_allgenes)
+(length(gtex_bad_genes)/ length(gtex_allgenes)) *100
+
+length(tcga_bad_genes)
+length(tcga_allgenes)
+(length(tcga_bad_genes)/ 16109)*100
+
+commongenes = unique( c( tcga_allgenes, gtex_allgenes))
+length(commongenes)
+
+bad_genes  = unique( c( tcga_bad_genes, gtex_bad_genes))
+length(bad_genes)
+(length(bad_genes)/16730 )* 100
+
+
+multimapped_discordant_genes = intersect(bad_genes, multi_mapping_genes[,3])
+length(multimapped_discordant_genes)
+(length(multimapped_discordant_genes)/ length(bad_genes))*100
+
+
+
+```
+
+
+## Disease causing genes that are discordant
+
+```{r}
+sp = split(disease, disease[,2])
+dres = lapply(sp, function(x){
+  dname = paste(x[, "diseaseName"], collapse = ", ")
+  dcode = paste(x[, "diseaseId"], collapse = ", ")
+  x= x[1, ]
+  x$diseaseName = dname
+  x$diseaseId = dcode
+  x
+})
+dres = do.call(rbind, dres)
+disease_genes = dres[, c("geneId", "geneSymbol", "diseaseId", "diseaseName")]
+
+length(intersect(disease_genes[,2], bad_genes)) 
+
+cancer_genes = disease_genes[ match(intersect(disease_genes[,2], bad_genes), disease_genes[,2]), ]
+cancer_genes = cancer_genes[order(cancer_genes[,2], decreasing=FALSE), ]
+cancertype = disease[match( as.character( cancer_genes[,2]), disease[,2]), ]
+cancertype = cancertype[, c(2, 4)]
+```
+
+
+## Save Results 
+
+```{r}
+save(gtexTbl, 
+  file =  file.path( results_dir, "discordant", 
+                     paste0("Heatmap_gtexTbl",fold_no,".RData")))
+save(tcgaTbl, 
+  file = file.path( results_dir, "discordant", 
+                    paste0("Heatmap_tcgaTbl",fold_no,".RData")))
+
+save(tcga_lst,
+  file= file.path( results_dir, "discordant",
+                   paste0("TCGA_genes_diff_individual_sources",fold_no,".RData")))
+save(gtex_lst, 
+  file=file.path( results_dir, "discordant", 
+                  paste("GTEX_genes_diff_individual_sources",fold_no,".RData")))
+
+write.table( bad_genes, 
+  file.path( results_dir, "discordant", paste0("overall_bad_genes_",fold_no, ".txt")), 
+  sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+write.table( tcga_bad_genes, 
+  file.path( results_dir, "discordant", paste0("tcga_bad_genes_",fold_no, ".txt")), 
+  sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+write.table( gtex_bad_genes, 
+  file.path(results_dir, "discordant", paste0("gtex_bad_genes_",fold_no, ".txt")), 
+  sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+write.table( multimapped_discordant_genes, 
+  file.path(results_dir, "discordant", paste0("multimapped_discordant_genes_",fold_no, ".txt")),
+  sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+write.table(cancertype, 
+  file.path(results_dir, "discordant", paste0("disease_discordant_genes_",fold_no,".txt")), 
+  sep="\t", quote = FALSE, row.names=FALSE, col.names=TRUE)
+
+write.table(gtexTbl,
+  file.path( results_dir, "tables", "Supp_Table_GTEX_discordant_samples.txt"), 
+  sep="\t", quote=FALSE, row.names=TRUE, col.names=TRUE)
+
+write.table(tcgaTbl, 
+  file.path( results_dir, "tables", "Supp_Table_TCGA_discordant_samples.txt"), 
+  sep="\t", quote=FALSE, row.names=TRUE, col.names=TRUE)
+
+
+```
+

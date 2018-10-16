@@ -1,0 +1,285 @@
+---
+title: "Pipeline differences across various sources of Data"
+author: "Sonali Arora, Hamid Bolouri"
+date: "October 1, 2018"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+## Introduction
+
+In this vignette, we generate Figure 2 of the manuscript.
+
+```{r setup}
+
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(grid)
+  library(gridExtra)
+  library(ggplot2)
+  library(pheatmap)
+  library(RColorBrewer)
+  library(eulerr)
+  library(UpSetR)
+})
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+
+s1 = 3 # size for points in PCA plot
+plot_title_size = 25
+axis_text_size = 25
+
+if(!file.exists( file.path( s3_dir, "SE_objects"))){
+  stop("Please go through vignette 3 & 4 to make SE objects or download from S3 bucket")
+}
+if(!file.exists( file.path( results_dir))){
+   system(paste0("mkdir ", results_dir))
+}
+if(!file.exists( file.path( results_dir, "pdf"))){
+   system(paste0("mkdir ", results_dir, "pdf"))
+}
+
+draw_colnames_45 <- function (coln, gaps, ...) {
+  coord <- pheatmap:::find_coordinates(length(coln), gaps)
+  x     <- coord$coord - 0.5 * coord$size
+  res   <- grid::textGrob(
+    coln, x = x, y = unit(1, "npc") - unit(3,"bigpts"),
+    vjust = 0.75, hjust = 1, rot = 45, gp = grid::gpar(...)
+  )
+  return(res)
+}
+
+assignInNamespace(
+  x = "draw_colnames",
+  value = "draw_colnames_45",
+  ns = asNamespace("pheatmap")
+)
+
+tcga_tbl <- get(load( file.path( git_dir, "data", "discordant", 
+                                 "Heatmap_tcgaTbl4fold.RData")))
+gtex_tbl <- get(load(  file.path( git_dir, "data", "discordant",
+                                  "Heatmap_gtexTbl4fold.RData")))
+u2af1_lst <- get(load( file.path( git_dir, "data", "discordant", 
+                                  "u2af1_tcga_expression.RData")))
+
+```
+
+## Heatmaps for Discordant Samples per gene
+
+```{r heatmap}
+
+colnames(tcga_tbl) = c(
+  "GDC-Xena", "GDC-Recount2", "GDC-MSKCC", "GDC-Piccolo"  ,
+  "Xena-Recount2", "Xena-Piccolo", "Xena-MSKCC", "Recount2-Piccolo",
+  "Recount2-MSKCC", "MSKCC-Piccolo") 
+colnames(gtex_tbl)=c(
+  "GTEx-Xena", "GTEx-Recount2", "GTEx-MSKCC", "Xena-Recount2",
+  "Xena-MSKCC", "Recount2-MSKCC")
+
+myBreaks <- c(0, 1, 50, 100, 500, 1000, 2000, 3000, 4000, 5000)
+mycolors <- c( "white",brewer.pal(n=8, name="YlOrRd"))
+tcga_heat <- pheatmap(tcga_tbl, scale='none', cluster_cols=TRUE,
+       cluster_rows=TRUE, show_rownames=FALSE,
+       color= mycolors,
+       clustering_method="ward.D2", breaks=myBreaks,
+       silent = FALSE,
+       fontsize = 25, border_color= "black",
+       fontsize_col  = 25) # YlGnBu
+
+myBreaks2 <- c(0, 1, 50, 100, 500, 1000, 2000)
+mycolors2 <- c( "white",brewer.pal(n=8, name="YlGnBu"))
+gtex_heat <- pheatmap(gtex_tbl, scale='none', cluster_cols=TRUE,
+               cluster_rows=TRUE, show_rownames=FALSE,
+               color=mycolors2,
+               clustering_method="ward.D2", breaks=myBreaks2,
+               silent=FALSE,
+               fontsize = 25,
+               fontsize_col  = 25)
+
+
+```
+
+## Pairwise Gene Plots for U2AF1
+```{r u2af1-tcga}
+
+temp_gdc = u2af1_lst$temp_gdc
+temp_piccolo = u2af1_lst$temp_piccolo
+temp_mskcc_norm = u2af1_lst$temp_mskcc_norm
+temp_recount2 = u2af1_lst$temp_recount2
+temp_xena = u2af1_lst$temp_xena
+
+
+m = 5 # pairwise max of 2 vectors.
+lf = 2 # pairwise logfold change difference between 2 vectors
+
+myFun  = function(x1, y1, plot_title){
+  df = data.frame(cbind( x=x1, y=y1))
+  sel = which(abs(x1- y1) > lf & pmax(x1, y1) > m)
+  color1 = rep("black", 4800)
+  color1[sel] = "red"
+  p0 = ggplot(df, aes(x=x, y=y)) +
+    geom_point(colour=color1) +
+    theme_bw(base_family="Helvetica") +
+    xlab("") +
+    ylab("")+
+    ggtitle(plot_title) +
+    scale_y_continuous(breaks=seq(2,10,2)) +
+    theme(plot.title = element_text(lineheight=.8, size=plot_title_size),
+          axis.text=element_text(size=axis_text_size),
+          axis.title = element_text(size=axis_text_size))
+
+  p0
+}
+
+p1 = myFun(x=temp_xena, y=temp_recount2, plot_title = "Recount2 \nvs Xena")
+p1 <- p1 + ylab("U2AF1(log2(TPM+0.001))") + scale_x_continuous(breaks=seq(1,8,2))
+
+
+p2 = myFun(x=temp_gdc, y=temp_recount2, plot_title = "Recount2 \nvs GDC")
+p3 = myFun(x=temp_gdc, y=temp_mskcc_norm, plot_title = "MSKCC \nvs GDC")
+p4 = myFun(x=temp_gdc, y=temp_xena, plot_title = "Xena vs\n GDC")
+
+  
+p5 = myFun(x=temp_xena, y=temp_mskcc_norm, plot_title = "MSKCC \nvs Xena")
+p5= p5 +  scale_x_continuous(breaks=seq(2,8,2))
+
+p6 = myFun(x=temp_recount2, y=temp_mskcc_norm, plot_title = "MSKCC vs\n Recount2")
+p7 = myFun(x=temp_gdc, y=temp_piccolo, plot_title = "Piccolo vs\n GDC")
+
+p8 = myFun(x=temp_mskcc_norm, y=temp_piccolo, plot_title = "Piccolo vs\nMSKCC")
+p8= p8 +  scale_x_continuous(breaks=seq(4,8,2))
+
+p9 = myFun(x=temp_recount2, y=temp_piccolo, plot_title = "Piccolo vs\nRecount2")
+
+p10 = myFun(x=temp_xena, y=temp_piccolo, plot_title = "Piccolo vs\n Xena")
+p10= p10 +  scale_x_continuous(breaks=seq(2,8,2))
+```
+
+## Upset Plots and Euler Venn Diagrams showing differing genes across Various sources of Data
+
+```{r venn-upset}
+
+tcga_lst <- get(load( file.path( git_dir, "data", "discordant", 
+                 "TCGA_genes_diff_individual_sources4fold.RData")))
+gtex_lst <- get(load( file.path( git_dir, "data", "discordant",
+                 "GTEX_genes_diff_individual_sources4fold.RData")))
+
+tcga_bad_genes = read.delim( file.path( git_dir, "data", "discordant", 
+    "tcga_bad_genes_4fold.txt"), header=FALSE, stringsAsFactors = FALSE)[,1]
+gtex_bad_genes = read.delim( file.path( git_dir, "data", "discordant", 
+    "gtex_bad_genes_4fold.txt"), header=FALSE, stringsAsFactors = FALSE)[,1]
+fold_no="4fold"
+
+lst = list(TCGA=tcga_bad_genes, GTEX = gtex_bad_genes)
+fit <- euler(lst, shape = "ellipse")
+v0 = plot(fit, fontsize=8, quantities = list(fontsize = 8))
+
+# tcga venn diagram
+fit1 <- euler(tcga_lst, shape = "ellipse")
+tcga_quant=fit1$original
+tcga_quant= rep("", length(tcga_quant))
+v1 = plot(fit1,
+          fills= c("#A3A500", "darkblue", "grey45", "orange", "#E76BF3" ),
+          edges = FALSE, fontsize = 40, quantities = tcga_quant,
+          legend =list(labels =c("A"="GDC", "B"="MSKCC", "C"="Recount2",
+                                 "D"="Xena", "E"="Piccolo"), fontsize= 25),
+          main = "Genes Different across TCGA")
+
+# gtex venn diagram
+fit2 <- euler(gtex_lst, shape = "ellipse")
+gtex_quant=fit2$original
+gtex_quant = rep("", length(gtex_quant))
+v2 = plot(fit2,
+          fills= c("#A3A500", "darkblue", "grey45", "orange"  ),
+          edges = FALSE, fontsize = 40, quantities = gtex_quant,
+          legend =list(labels =c("A"="GTEx", "B"="MSKCC", "C"="Recount2",
+                                 "D"="Xena" ), fontsize= 25),
+          main = "Genes Different across GTEX")
+
+
+diff_genes = unique( unlist(tcga_lst) )
+tcga_diff_mat = matrix( nrow = length(diff_genes), ncol = 5)
+rownames(tcga_diff_mat) = diff_genes
+tcga_diff_mat[match( tcga_lst[["gdc_genes"]] ,rownames(tcga_diff_mat)), 1] = 1
+tcga_diff_mat[match( tcga_lst[["norm_genes"]] ,rownames(tcga_diff_mat)), 2] = 1
+tcga_diff_mat[match( tcga_lst[["recount2_genes"]] ,rownames(tcga_diff_mat)), 3] = 1
+tcga_diff_mat[match( tcga_lst[["xena_genes"]] ,rownames(tcga_diff_mat)), 4] = 1
+tcga_diff_mat[match( tcga_lst[["piccolo_genes"]] ,rownames(tcga_diff_mat)), 5] = 1
+tcga_diff_mat[is.na(tcga_diff_mat)] = 0
+colnames(tcga_diff_mat)= c("GDC", "MSKCC", "Recount2", "Xena", "Piccolo")
+tcga_diff_mat = data.frame(geneName = diff_genes, tcga_diff_mat)
+rownames(tcga_diff_mat) = NULL
+
+diff_genes = unique( unlist(gtex_lst) )
+gtex_diff_mat = matrix( nrow = length(diff_genes), ncol = 4)
+rownames(gtex_diff_mat) = diff_genes
+gtex_diff_mat[match( gtex_lst[["gtex_genes"]] ,rownames(gtex_diff_mat)), 1] = 1
+gtex_diff_mat[match( gtex_lst[["norm_genes"]] ,rownames(gtex_diff_mat)), 2] = 1
+gtex_diff_mat[match( gtex_lst[["recount2_genes"]] ,rownames(gtex_diff_mat)), 3] = 1
+gtex_diff_mat[match( gtex_lst[["xena_genes"]] ,rownames(gtex_diff_mat)), 4] = 1
+gtex_diff_mat[is.na(gtex_diff_mat)] = 0
+colnames(gtex_diff_mat)= c("GTEx", "MSKCC", "Recount2", "XENA")
+gtex_diff_mat = data.frame(geneName = diff_genes, gtex_diff_mat)
+rownames(gtex_diff_mat) = NULL
+
+```
+
+## Arrange and make final Figure
+```{r final-fig2}
+gs = list( tcga_heat[[4]],
+           gtex_heat[[4]],
+          p1, p2, p3, p4, p5, p6, p7, p8, p9 , p10)
+
+lay <- rbind(c( NA, NA, NA, NA,NA, 1, 1, 1,1,1),
+             c( NA, NA, NA, NA,NA, 2, 2, 2,2,2),
+             c(3,4,5,6,7,8,9,10,11,12))
+
+pdf(file.path( results_dir, "pdf", "Fig2.pdf"), width =24, height=17)
+grid.arrange(grobs = gs, layout_matrix = lay,
+             heights=unit(c(6, 6, 4), c("in", "in", "in")))
+
+grid.arrange( v1, v2, nrow=1, ncol =2,
+              top="Euler Venn Diagram showing genes different in TCGA & GTEX")
+
+upset(tcga_diff_mat, nsets=5, order.by = "freq",
+      sets.x.label = "No of Genes",
+      mainbar.y.label = "Overlap Size",
+      show.numbers = "no",
+      text.scale = 3.5 ,
+      sets.bar.color =c(
+        #"MSKCC-BATCH"="#00B0F6",
+        "Recount2"="grey45",
+        "Xena"="orange",
+        "GDC"="#A3A500",
+        "MSKCC Norm"="darkblue",
+        "Piccolo"="#E76BF3"
+      ))
+
+upset(gtex_diff_mat, nsets=4, order.by = "freq",
+      sets.x.label = "No of Genes",
+      mainbar.y.label = "Overlap Size",
+      show.numbers = "no",
+      text.scale = 3.5 ,
+      sets.bar.color =c(
+        "Recount2"="grey45",
+        "GTEx"="#A3A500",
+        "Xena"="orange",
+        "MSKCC Norm"="darkblue"
+      ))
+dev.off()
+
+```
+

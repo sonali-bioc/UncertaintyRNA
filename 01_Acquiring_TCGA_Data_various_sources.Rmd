@@ -1,0 +1,534 @@
+---
+title: "Acquiring TCGA Data"
+author: "Sonali Arora, Hamid Bolouri"
+date: "October 1, 2018"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+## Introduction
+
+TCGA and GTEx are publicly available data repositories which contain sequencing
+data from cancer and normal patients respectively. In this vignette, we list
+out sources where you can obtain the data, and create SummarizedExperiment 
+objects for faster retrieval of the data.
+
+A SummarizedExperiment object contains three parts - 
+a) assays ( ie gene expression data for each gene each sample)
+b) row data ( ie regions of interest)
+c) column data ( ie information about samples)
+
+In our case, the assays makes up the gene expression matrix, and the row data 
+contains information about the individual genes (eg: which chromosome, 
+start and end coordinates , strand information). The column data will contain
+the name of the sample, which cancer type the sample is associated with. 
+
+Gencode GTF files were downloaded for each source
+and saved in a folder called "annotations". These GTF files contain information
+(ie chromosome, start , end coordinates etc) about all genes. 
+
+
+To populate  the row data for a SummarizedExperiment object, we used the corresponding
+GTF file to make a GenomicRanges object describing the ranges of each gene for each source of data.
+
+A great introduction to  SummarizedExperiment can be found [here](https://bioconductor.org/packages/release/bioc/vignettes/SummarizedExperiment/inst/doc/SummarizedExperiment.html).
+
+An excellent guide to GenomicRanges can be found [here](https://bioconductor.org/packages/release/bioc/html/GenomicRanges.html)
+
+
+## TCGA data from GDC 
+
+Original Source of TCGA Data from their [data portal](https://portal.gdc.cancer.gov/)
+
+Below, we download the above GDC data via R/Bioconductor package [TCGABiolinks](https://bioconductor.org/packages/release/bioc/html/TCGAbiolinks.html)
+
+Processing of the TCGA samples by the GDC team is described [here](https://docs.gdc.cancer.gov/Data/Bioinformatics_Pipelines/Expression_mRNA_Pipeline/#fpkm)
+
+Briefly, for each cancer type, RNASeq Data was obtained as RangedSummarizedExperiment  (rse) objects
+and then were concatenated together to form 1 final rse object.
+
+
+```{r get-gdc, eval=FALSE}
+library(TCGAbiolinks)
+library(SummarizedExperiment)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+setwd("datasource_GDC")
+types = c( "TCGA-LIHC", "TCGA-PRAD", 
+           "TCGA-READ", "TCGA-BLCA", "TCGA-LGG" , "TCGA-BRCA",
+            "TCGA-UCEC", "TCGA-SARC", "TCGA-KIRC", "TCGA-PCPG" ,
+           "TCGA-DLBC", "TCGA-MESO","TCGA-THYM" ,"TCGA-LUSC" ,"TCGA-OV"  , 
+           "TCGA-LUAD", "TCGA-STAD", "TCGA-GBM" , "TCGA-LAML" ,"TCGA-THCA" ,
+           "TCGA-CESC", "TCGA-COAD" ,"TCGA-HNSC", "TCGA-UVM" ,
+           "TCGA-SKCM", "TCGA-PAAD" ,"TCGA-TGCT" ,"TCGA-KICH" ,"TCGA-ESCA" ,
+           "TCGA-KIRP", "TCGA-ACC" , "TCGA-CHOL" ,"TCGA-UCS")
+
+d1<-lapply(types, function(x){
+  query2<- GDCquery(project = x,
+                  data.category = "Transcriptome Profiling",
+                  data.type = "Gene Expression Quantification",
+                  workflow.type = "HTSeq - FPKM")
+  GDCdownload(query2)
+  data <- GDCprepare(query2)
+  save(data, file = paste0( "gdc_", x, "_02_06_2018.Rdata"))
+})
+
+gdc_prad <- get( load("gdc_TCGA-PRAD_02_06_2018.Rdata"))
+gdc_lihc <- get(load("gdc_TCGA-LIHC_02_06_2018.Rdata"))
+gdc_read <- get(load("gdc_TCGA-READ_02_06_2018.Rdata"))
+gdc_blca <- get(load("gdc_TCGA-BLCA_02_06_2018.Rdata"))
+gdc_lgg <- get(load("gdc_TCGA-LGG_02_06_2018.Rdata"))
+gdc_brca <- get(load("gdc_TCGA-BRCA_02_06_2018.Rdata"))
+gdc_ucec <- get(load("gdc_TCGA-UCEC_02_06_2018.Rdata"))
+gdc_sarc <- get(load("gdc_TCGA-SARC_02_06_2018.Rdata"))
+gdc_kirc <- get(load("gdc_TCGA-KIRC_02_06_2018.Rdata"))
+gdc_pcpg <- get(load("gdc_TCGA-PCPG_02_06_2018.Rdata"))
+gdc_dlbc <- get(load("gdc_TCGA-DLBC_02_06_2018.Rdata"))
+gdc_meso <- get(load("gdc_TCGA-MESO_02_06_2018.Rdata"))
+gdc_thym <- get(load("gdc_TCGA-THYM_02_06_2018.Rdata"))
+gdc_lusc <- get(load("gdc_TCGA-LUSC_02_06_2018.Rdata"))
+gdc_ov <- get(load("gdc_TCGA-OV_02_06_2018.Rdata"))
+gdc_luad <- get(load("gdc_TCGA-LUAD_02_06_2018.Rdata"))
+gdc_stad <- get(load("gdc_TCGA-STAD_02_06_2018.Rdata"))
+gdc_gbm <- get(load("gdc_TCGA-GBM_02_06_2018.Rdata"))
+gdc_laml <- get(load("gdc_TCGA-LAML_02_06_2018.Rdata"))
+gdc_thca <- get(load("gdc_TCGA-THCA_02_06_2018.Rdata"))
+gdc_cesc <- get(load("gdc_TCGA-CESC_02_06_2018.Rdata"))
+gdc_coad <- get(load("gdc_TCGA-COAD_02_06_2018.Rdata"))
+gdc_hnsc <- get(load("gdc_TCGA-HNSC_02_06_2018.Rdata"))
+gdc_uvm <- get(load("gdc_TCGA-UVM_02_06_2018.Rdata"))
+gdc_skcm <- get(load("gdc_TCGA-SKCM_02_06_2018.Rdata"))
+gdc_paad <- get(load("gdc_TCGA-PAAD_02_06_2018.Rdata"))
+gdc_tgct <- get(load("gdc_TCGA-TGCT_02_06_2018.Rdata"))
+gdc_kich <- get(load("gdc_TCGA-KICH_02_06_2018.Rdata"))
+gdc_esca <- get(load("gdc_TCGA-ESCA_02_06_2018.Rdata"))
+gdc_kirp <- get(load("gdc_TCGA-KIRP_02_06_2018.Rdata"))
+gdc_acc <- get(load("gdc_TCGA-ACC_02_06_2018.Rdata"))
+gdc_chol <- get(load("gdc_TCGA-CHOL_02_06_2018.Rdata"))
+
+gdc = cbind(assay(gdc_acc), assay(gdc_blca),assay(gdc_brca), assay(gdc_cesc),
+  assay(gdc_chol), assay(gdc_coad), assay(gdc_dlbc), assay(gdc_esca), 
+  assay(gdc_gbm), assay(gdc_hnsc), assay(gdc_kich), assay(gdc_kirc), 
+  assay(gdc_kirp), assay(gdc_laml), assay(gdc_lgg),  assay(gdc_lihc),
+  assay(gdc_luad), assay(gdc_lusc), assay(gdc_meso), assay(gdc_ov),  
+  assay(gdc_paad), assay(gdc_pcpg), assay(gdc_prad), assay(gdc_read), 
+  assay(gdc_sarc), assay(gdc_skcm), assay(gdc_stad), assay(gdc_tgct), 
+  assay(gdc_thca), assay(gdc_thym), assay(gdc_ucec), assay(gdc_uvm))
+
+sampleGroup = c(
+    rep("ACC", ncol(gdc_acc)), 
+    rep("BLCA", ncol(gdc_blca)),
+    rep("BRCA", ncol(gdc_brca)), 
+    rep("CESC", ncol(gdc_cesc)),
+    rep("CHOL", ncol(gdc_chol)), 
+    rep("COAD", ncol(gdc_coad)), 
+    rep("DLBC", ncol(gdc_dlbc)), 
+    rep("ESCA", ncol(gdc_esca)), 
+    rep("GBM", ncol(gdc_gbm)), 
+    rep("HNSC", ncol(gdc_hnsc)),
+    rep("KICH", ncol(gdc_kich)), 
+    rep("KIRC", ncol(gdc_kirc)), 
+    rep("KIRP", ncol(gdc_kirp)), 
+    rep("LAML", ncol(gdc_laml)), 
+    rep("LGG", ncol(gdc_lgg)),  
+    rep("LIHC", ncol(gdc_lihc)),
+    rep("LUAD", ncol(gdc_luad)), 
+    rep("LUSC", ncol(gdc_lusc)), 
+    rep("MESO", ncol(gdc_meso)), 
+    rep("OV", ncol(gdc_ov)),  
+    rep("PAAD", ncol(gdc_paad)), 
+    rep("PCPG", ncol(gdc_pcpg)),
+    rep("PRAD", ncol(gdc_prad)), 
+    rep("READ", ncol(gdc_read)), 
+    rep("SARC", ncol(gdc_sarc)),
+    rep("SKCM", ncol(gdc_skcm)), 
+    rep("STAD", ncol(gdc_stad)), 
+    rep("TGCT", ncol(gdc_tgct)),
+    rep("THCA", ncol(gdc_thca)), 
+    rep("THYM", ncol(gdc_thym)), 
+    rep("UCEC", ncol(gdc_ucec)), 
+    rep("UVM", ncol(gdc_uvm)) )
+
+coldata = cbind(sampleName = colnames(gdc), sampleGroup)
+rse<-SummarizedExperiment(assays=SimpleList(counts=data.matrix(gdc)),
+                            rowRanges=rowRanges(gdc_acc), 
+                          colData=data.frame(coldata))
+setwd(bigdir)
+if(!file.exists( file.path( results_dir))){
+   system(paste0("mkdir ", file.path(results_dir)))
+}
+if(!file.exists( file.path( results_dir, "combined_SEobjects"))){
+   system(paste0("mkdir ", file.path(results_dir, "combined_SEobjects")))
+}
+save(rse, file=file.path(results_dir, 
+        "combined_SEobjects", "GDC_htseq_fpkm_09_28_2018.RData"))
+
+```
+
+## TCGA data from Xena-Toil 
+
+The following files were downloaded from Toil via
+[UCSC Xena's website](https://xenabrowser.net/datapages/?hub=https://toil.xenahubs.net:443)  
+1) TCGA_GTEX_category.txt  
+2) TcgaTargetGTEX_phenotype.txt  
+3) TcgaTargetGtex_rsem_gene_fpkm  
+4) TcgaTargetGtex_rsem_gene_tpm  
+
+We downloaded both FPKM and TPM counts. Since the same file created both TCGA 
+and GTEx data, we created a quick function to extract data from the same. 
+
+```{r eval =FALSE}
+
+rm(list=ls())
+gc()
+library(rtracklayer)
+library(SummarizedExperiment)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+createSEfromXena <- 
+  function(tag, countsFile)
+{
+  genes_v23 = import(file.path(s3_dir, "annotations", 
+                               "gencode.v23.annotation.gtf"))
+  
+  category = read.delim(file.path(s3_dir, "datasource_XENA",
+      "TCGA_GTEX_category.txt"),  header=TRUE, stringsAsFactors=FALSE)
+  
+    
+  category = category[grep(paste0("^",tag, "*"), category[,2]), ]
+  
+  
+  expected_counts = read.delim(countsFile, header=TRUE, stringsAsFactors=FALSE,
+                               row.names=1)
+  # get row in order
+  row_nms = intersect( rownames(expected_counts), genes_v23$gene_id)
+  expected_count2 = expected_counts[row_nms, ]
+  genes_v23 = genes_v23[ match( rownames(expected_count2), genes_v23$gene_id), ]
+  dim(expected_count2)
+  expected_count2[1:5, 1:5]
+  
+  # get column in order.
+  colnames(expected_count2) = gsub("\\.", "-", colnames(expected_count2))
+  expected_count2 = expected_count2[, grep(paste0("^",tag, "*"),  colnames(expected_count2))]
+  expected_count2[1:5, 1:5]
+  
+  phenotype = read.delim(file.path(s3_dir, "datasource_XENA",
+        "TcgaTargetGTEX_phenotype.txt"), header=TRUE, stringsAsFactors=FALSE)
+  phenotype = phenotype[which(phenotype[,7]==tag), ]
+  
+  idx = match(colnames(expected_count2), phenotype[,1])
+  expected_count2 = expected_count2[, na.omit(idx) ]
+  expected_count2[1:5, 1:5]
+  
+  
+  idx = match(substr(colnames(expected_count2),1,15), phenotype[,1])
+  phenotype = phenotype[idx, ]
+  expected_count2 = data.matrix(expected_count2)
+  rownames(phenotype) = colnames(expected_count2)
+  
+  rse <- SummarizedExperiment(assays=SimpleList(counts=expected_count2),
+                              rowRanges=genes_v23, colData=phenotype)
+  rse
+}
+
+tcga_fpkm = createSEfromXena("TCGA",
+   file.path(s3_dir, "datasource_XENA", "TcgaTargetGtex_rsem_gene_fpkm"))
+tcga_tpm = createSEfromXena("TCGA",
+   file.path(s3_dir, "datasource_XENA", "TcgaTargetGtex_rsem_gene_tpm"))
+
+save(tcga_fpkm, file =file.path(results_dir, "combined_SEobjects",
+                                "TCGA_Xena_RSEM_FPKM_09_28_2018.RData"))
+save(tcga_tpm, file = file.path(results_dir, "combined_SEobjects",
+                                "TCGA_Xena_RSEM_TPM_09_28_2018.RData"))
+```
+
+## TCGA data from Piccolo Lab 
+
+ TCGA data was reprocessed and compiled and saved in this 
+[GEO repository.](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE62944) 
+
+We downloaded the file "GSE62944_RAW.tar" from the GEO repository 
+
+Next, we unpacked it using "tar -xvf GSE62944_RAW.tar" and used the following two 
+files for subsequent analysis:   
+1) GSE62944_06_01_15_TCGA_24_CancerType_Samples.txt  
+2) GSM1536837_01_27_15_TCGA_20.Illumina.tumor_Rsubread_FPKM.txt.gz  
+
+```{r eval=FALSE}
+rm(list=ls())
+gc()
+library(rtracklayer)
+library(SummarizedExperiment)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+# read in the data
+tumor_samples = read.delim(
+  file.path(s3_dir, "datasource_PICCOLO", 
+  "GSE62944_06_01_15_TCGA_24_CancerType_Samples.txt"), 
+  header=FALSE, stringsAsFactors=FALSE)
+tdata = read.delim(
+  file.path(s3_dir, "datasource_PICCOLO",
+  "GSM1536837_01_27_15_TCGA_20.Illumina.tumor_Rsubread_FPKM.txt.gz"), 
+  header=TRUE, stringsAsFactors = FALSE, row.names=1)
+
+colnames(tdata) = gsub("\\.","-", colnames(tdata))
+
+# get gene annotations.
+genes_gr = import( file.path(s3_dir, "annotations","gencode.v19.annotation.gtf"))
+genes_gr = genes_gr[which(genes_gr$type=="gene"), ]
+common_genes=intersect(rownames(tdata), genes_gr$gene_name)
+data = tdata[common_genes, ]
+genes_gr= genes_gr[match(common_genes, genes_gr$gene_name), ]
+idx = match(colnames(data), tumor_samples[,1])
+tumor_samples = tumor_samples[idx, ]
+
+# create an SE object ans save it.
+TCGA_gse62944_tumor = SummarizedExperiment(
+  assays=SimpleList(counts=data.matrix(data)),
+  rowRanges=genes_gr, colData=tumor_samples)
+save(TCGA_gse62944_tumor, file=file.path(results_dir, "combined_SEobjects", 
+                 "TCGA_gse62944_tumor_09_28_2018.RData"))
+
+```
+
+
+## TCGA data from MSKCC (MSKCC)
+
+The data subfolder was downloaded from [github website](https://github.com/mskcc/RNAseqDB)
+by cloning the git repository. 
+
+The authors call this data "unnormalized" meaning that it is not batch corrected.
+We refer to this data source as "MSKCC" meaning that the data is 
+normalized to FPKM but not batch corrected (cf. next section).
+
+```{r eval=FALSE}
+rm(list=ls())
+gc()
+library(rtracklayer)
+library(SummarizedExperiment)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+# read in the data
+source = file.path(s3_dir, "datasource_MSKCC", "RNAseqDB","data","unnormalized")
+files = list.files(path = source, full.names = T, pattern ="*tcga-t.txt")
+all_data = lapply(files, function(x){
+   dat = read.delim(x, header=T, stringsAsFactors=FALSE, row.names=1)
+   dat =dat[,-1]
+})
+sapply(all_data, nrow)
+sapply(all_data, ncol)
+
+# get gene Names from each source 
+genes = lapply(all_data, function(x) rownames(x))
+genes = genes[[1]]
+
+# ensure each source has same order of genes
+all_data = lapply(all_data, function(x){
+   x[genes, ]
+})
+types = gsub("-rsem-fpkm-tcga.txt.gz", "", basename(files))
+
+# combine the sample Names by region.
+pheno = mapply(function(x,y){
+   cbind(sample = colnames(y),type=rep(x,ncol(y)) )
+}, x=types, y = all_data)
+
+pheno = do.call(rbind, pheno)
+all_data = do.call(cbind, all_data)
+
+# get Ranges for genes
+genes_gr = import(file.path(s3_dir,"annotations","gencode.v19.annotation.gtf"))
+genes_gr = genes_gr[which(genes_gr$type=="gene"), ]
+genes_gr = genes_gr[ match( rownames(all_data), genes_gr$gene_name) , ]
+mcols(genes_gr) = mcols(genes_gr)[,c("gene_id", "gene_name", "gene_type")]
+rownames(pheno) = pheno[,1]
+
+# create se object and save it.
+mskcc_norm<-SummarizedExperiment(assays=SimpleList(counts=data.matrix(all_data)),
+                            rowRanges=genes_gr, colData=pheno)
+save(mskcc_norm, file=file.path(results_dir, "combined_SEobjects",
+                "TCGA_unnormalized_RNAseqDB_09_28_2018.RData"))
+```
+
+
+## TCGA data from MSKCC (MSKCC-Batch)
+
+The data subfolder was downloaded from [github website](https://github.com/mskcc/RNAseqDB)
+by cloning the git repository. 
+
+Note: The authors call this data "normalized" meaning FPKM counts were 
+batch-corrected. We refer to this  data source as "MSKCC-Batch" 
+(cf. preceding section).
+
+```{r eval=FALSE}
+rm(list=ls())
+gc()
+
+library(rtracklayer)
+library(SummarizedExperiment)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+# read in the data
+source = file.path(s3_dir, "datasource_MSKCC", "RNAseqDB","data","normalized")
+
+files = list.files(path = source, full.names = T, pattern ="*tcga-t.txt$")
+
+all_data = lapply(files, function(x){
+   dat = read.delim(x, header=T, stringsAsFactors=FALSE, row.names=1)
+   dat =dat[,-1]
+})
+sapply(all_data, nrow)
+sapply(all_data, ncol)
+
+# get gene Names from each source 
+genes = lapply(all_data, function(x) rownames(x))
+genes_df = table(unlist(genes))
+genes = names(which(genes_df==19))
+
+# ensure each source has same order of genes
+all_data = lapply(all_data, function(x){
+   x[genes, ]
+})
+types = gsub("-rsem-fpkm-tcga-t.txt", "", basename(files))
+
+# combine the sample Names by region.
+pheno = mapply(function(x,y){
+   cbind(sample = colnames(y),type=rep(x,ncol(y)) )
+}, x=types, y = all_data)
+
+pheno = do.call(rbind, pheno)
+all_data = do.call(cbind, all_data)
+
+# get Ranges for genes
+genes_gr = import("annotations/gencode.v19.annotation.gtf")
+genes_gr = genes_gr[which(genes_gr$type=="gene"), ]
+table(is.na(match( rownames(all_data), genes_gr$gene_name)))
+genes_gr = genes_gr[ match( rownames(all_data), genes_gr$gene_name) , ]
+mcols(genes_gr) = mcols(genes_gr)[,c("gene_id", "gene_name", "gene_type")]
+rownames(pheno) = pheno[,1]
+
+# create se object and save it.
+mskcc_batch<-SummarizedExperiment(assays=SimpleList(counts=data.matrix(all_data)),
+                            rowRanges=genes_gr, colData=pheno)
+save(mskcc_batch, file=file.path(results_dir, "combined_SEobjects",
+                    "TCGA_normalized_RNAseqDB_09_28_2018.RData"))
+```
+
+
+## TCGA data from Recount2
+
+RSE objects were downloaded from [Recount2's website](https://jhubiostatistics.shinyapps.io/recount/)
+
+Note: all objects downloaded from recount2 have the same name 
+(ie rse_gene.Rdata), so the RSE objects were downloaded in separate folders.
+R/Bioconductor package [Recount](https://bioconductor.org/packages/release/bioc/html/recount.html) 
+was used to convert raw counts to RPKM counts.
+
+```{r eval=FALSE}
+rm(list=ls())
+gc()
+
+library(rtracklayer)
+library(SummarizedExperiment)
+library(recount)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+# load rsa
+load(file.path(s3_dir, "datasource_RECOUNT2_TCGA","rse_gene.Rdata"))
+
+# Calculate RPKM
+rpkm <- getRPKM(rse_gene, length_var = "bp_length", 
+                mapped_var = "mapped_read_count")
+
+# checking that column names and row names remain the same.
+identical( colnames(rse_gene), colnames(rpkm))
+identical( rownames(rse_gene), rownames(rpkm))
+
+# add rpkm back to object
+assay(rse_gene) = rpkm
+
+# coldata contains a very large DataFrame
+# we want only TCGA id, TCGA subtype and batch no 
+col_nms = c("gdc_cases.samples.portions.analytes.aliquots.submitter_id", 
+            "cgc_case_batch_number",  
+            "gdc_cases.project.project_id") 
+col_idx = match(col_nms, colnames(colData(rse_gene)))
+colData(rse_gene) = colData(rse_gene)[, col_idx]
+
+length(colData(rse_gene)[,1])  
+length(unique(colData(rse_gene)[,1]))
+
+# remove duplicate TCGA ids
+rm = which(duplicated(colData(rse_gene)[,1]))
+rse_tcga_recount2 = rse_gene[, -rm]
+
+# save se object
+save(rse_tcga_recount2,
+  file=file.path(results_dir, "combined_SEobjects_TCGA", 
+                 "rse_gene_tcga_recount2_09_28_2018.RData"))
+```
+
+
+

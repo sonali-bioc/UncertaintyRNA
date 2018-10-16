@@ -1,0 +1,224 @@
+---
+title: "Visualize RPKM Normalized TCGA and GTEx Data"
+author: "Sonali Arora, Hamid Bolouri"
+date: "October 1, 2018"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+## Introduction 
+
+In this vignette, we read in the processed SE objects, and compute Principal
+Components using log2(TPM+0.001) gene expression. We then proceed to save the 
+Principal Components which we use in later vignettes for plotting.
+
+## PCA plots using RPKM Normalized TCGA Data
+
+```{r eval =FALSE}
+
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(SummarizedExperiment)
+  library(Hmisc)
+  library(ggplot2)
+  library(pheatmap)
+  library(RColorBrewer)
+})
+
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+
+if(!file.exists( s3_dir, "SE_objects")){
+  stop("Please go through vignette 3 & 4 to make SE objects or download from S3 bucket")
+}
+if(!file.exists( file.path( results_dir))){
+   system(paste0("mkdir ", results_dir))
+}
+if(!file.exists( file.path( results_dir, "pca_data"))){
+   system(paste0("mkdir ", file.path(results_dir, "pca_data")))
+}
+maindir = file.path(results_dir, "pca_data")
+
+gdc <- get(load( file.path( s3_dir, "SE_objects", "RPKM_gdc.RData")))
+mskcc_norm <- get(load( file.path( s3_dir, "SE_objects", 
+                                   "RPKM_mskcc_norm.RData")))
+mskcc_batch <- get(load( file.path( s3_dir, "SE_objects", 
+                                    "RPKM_mskcc_batch.RData")))
+TCGA_gse62944_tumor <- get(load( file.path( s3_dir, "SE_objects", 
+                                            "RPKM_TCGA_gse62944_tumor.RData")))
+rse_tcga_recount2 <- get(load( file.path( s3_dir, "SE_objects", 
+                                          "RPKM_rse_tcga_recount2.RData")))
+xena_rpkm <- get(load( file.path( s3_dir, "SE_objects", "RPKM_xena.RData")))
+
+# For figure clarity, we exclude 3 outlier samples
+outlier = c("TCGA-A7-A26I-01B-06R-A22O-07", "TCGA-38-4625-01A-01R-1206-07",
+  "TCGA-FE-A232-01A-11R-A14Y-07")
+
+oidx = match(outlier, colnames(gdc))
+
+gdc = gdc[ , -oidx]
+mskcc_norm = mskcc_norm[, -oidx]
+mskcc_batch = mskcc_batch[, -oidx]
+TCGA_gse62944_tumor = TCGA_gse62944_tumor[, -oidx]
+rse_tcga_recount2 = rse_tcga_recount2[, -oidx]
+xena_rpkm = xena_rpkm[, -oidx]
+
+gdc_mat = assay(gdc)
+mskcc_norm_mat=assay(mskcc_norm)
+mskcc_batch_mat=assay(mskcc_batch)
+piccolo_mat=assay(TCGA_gse62944_tumor)
+recount2_mat=assay(rse_tcga_recount2)
+xena_mat= assay(xena_rpkm)
+
+# xena is downloaded as log2(rpkm +1) data - so no need to log it.
+# log the RPKM data for others
+gdc_mat=log2(gdc_mat+0.001)
+mskcc_norm_mat=log2(mskcc_norm_mat+0.001)
+mskcc_batch_mat=log2(mskcc_batch_mat+0.001)
+piccolo_mat=log2(piccolo_mat+0.001)
+recount2_mat=log2(recount2_mat+0.001)
+
+# all datasets together
+final_all = cbind(gdc_mat, piccolo_mat, mskcc_norm_mat, mskcc_batch_mat,
+                recount2_mat, xena_mat)
+tcga_all= prcomp(t(final_all))
+percentVar <- (tcga_all$sdev^2 / sum(tcga_all$sdev^2 ) )*100
+percentVar= round(percentVar[1:2], 2)
+# percentVar
+#save(tcga_all, file = "pca_object_TCGA_all_dataset_RPKM.RData")
+write.table(percentVar, 
+  file.path(maindir, "percentVar_TCGA_all_datasets_RPKM.txt"),
+  sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+coldata_all = data.frame(Project = c(rep("GDC",ncol(gdc_mat)),
+                                   rep("Piccolo_Lab", ncol(gdc_mat)),
+                                   rep("MSKCC_Norma", ncol(mskcc_norm_mat)),
+                                   rep("MSKCC_BATCH", ncol(mskcc_batch_mat)),
+                                   rep("Recount2",ncol(recount2_mat)),
+                                   rep("XENA_Toil", ncol(xena_mat))  ))
+pc_data_all = data.frame(PC1=tcga_all$x[,1], PC2=tcga_all$x[,2],
+                       Project = coldata_all[,"Project"],
+                       sampleName = colnames(final_all))
+write.table(pc_data_all, 
+          file.path(maindir,  "Fig1_PCA_Data_TCGA_all_datasets_RPKM.txt"),
+          sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+# CLEAR all objects from memory
+rm(list=ls())
+gc()
+
+```
+
+## PCA plots using RPKM Normalized GTEx Data
+
+```{r eval=FALSE}
+
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(SummarizedExperiment)
+  library(Hmisc)
+  library(ggplot2)
+  library(pheatmap)
+  library(RColorBrewer)
+})
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+if(!file.exists( s3_dir, "SE_objects")){
+  stop("Please go through vignette 3 & 4 to make SE objects or download from S3 bucket")
+}
+if(!file.exists( file.path( results_dir))){
+   system(paste0("mkdir ", results_dir))
+}
+if(!file.exists( file.path( results_dir, "pca_data"))){
+   system(paste0("mkdir ", file.path(results_dir, "pca_data")))
+}
+maindir = file.path(results_dir,"pca_data")
+
+gtex_original_rpkm <- get(load( file.path( s3_dir, "SE_objects",
+                                           "RPKM_gtex_original.RData"))) 
+mskcc_norm <- get(load( file.path( s3_dir, "SE_objects", 
+                                   "RPKM_gtex_mskcc_norm.RData")))
+mskcc_batch <- get(load( file.path( s3_dir, "SE_objects",
+                                    "RPKM_gtex_mskcc_batch.RData"))) 
+rse_gene <- get(load( file.path( s3_dir, "SE_objects",
+                                 "RPKM_gtex_recount2.RData")))
+xena_rpkm <- get(load( file.path( s3_dir, "SE_objects", 
+                                  "RPKM_gtex_xena.RData")))
+
+gtex_v6_mat = assay(gtex_original_rpkm)
+mskcc_norm_mat=assay(mskcc_norm)
+mskcc_batch_mat=assay(mskcc_batch)
+recount2_mat=assay(rse_gene)
+xena_mat= assay(xena_rpkm)
+
+# log the RPKM data
+gtex_v6_mat=log2(gtex_v6_mat+0.001)
+mskcc_norm_mat=log2(mskcc_norm_mat+0.001)
+mskcc_batch_mat=log2(mskcc_batch_mat+0.001)
+recount2_mat=log2(recount2_mat+0.001)
+
+# ALL DATASETS - REMOVE OUTLIER
+o1 =match("GTEX-T5JW-0726-SM-4DM6D", colnames(gtex_v6_mat)) #90
+o2 =match("GTEX-U3ZN-1626-SM-4DXTZ", colnames(gtex_v6_mat)) #92
+gtex_v6_mat = gtex_v6_mat[ ,-c(o1, o2) ]
+mskcc_norm_mat = mskcc_norm_mat[, -c(o1,o2) ]
+mskcc_batch_mat = mskcc_batch_mat[, -c(o1,o2) ]
+recount2_mat = recount2_mat[, -c(o1,o2) ]
+xena_mat = xena_mat[, -c(o1,o2) ]
+
+
+# all datasets
+message("PCA for all datasets  begins..")
+
+final_all = cbind(gtex_v6_mat,  mskcc_norm_mat, mskcc_batch_mat,
+                recount2_mat, xena_mat)
+gtex_all = prcomp(t(final_all))
+percentVar <- (gtex_all$sdev^2 / sum(gtex_all$sdev^2 ) )*100
+percentVar= round(percentVar[1:2], 2)
+# percentVar
+#save(gtex_all, file = "pca_object_GTEx_all_dataset_RPKM.RData")
+write.table(percentVar, 
+  file.path(maindir, "percentVar_GTEX_all_datasets_RPKM.txt"),
+  sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+
+coldata_all = data.frame(Project = c(rep("GTEX-V6",ncol(gtex_v6_mat)),
+                                   rep("MSKCC_Norm", ncol(mskcc_norm_mat)),
+                                   rep("MSKCC_BATCH", ncol(mskcc_batch_mat)),
+                                   rep("Recount2",ncol(recount2_mat)),
+                                   rep("XENA_Toil", ncol(xena_mat))  ))
+pc_data_all = data.frame(PC1=gtex_all$x[,1], PC2=gtex_all$x[,2],
+                       Project = coldata_all[,"Project"],
+                       sampleName = colnames(final_all))
+write.table(pc_data_all, 
+            file.path(maindir,  "Fig1_PCA_Data_GTEX_all_datasets_RPKM.txt"),
+          sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+#clear all objects from memory
+rm(list=ls())
+gc()
+```

@@ -1,0 +1,288 @@
+---
+title: "Visualize TPM Normalized TCGA and GTEx Data"
+author: "Sonali Arora, Hamid Bolouri"
+date: "October 1, 2018"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+## Introduction
+
+In this vignette, we read in the processed SE objects, and compute Principal
+Components using log2(TPM+0.001) gene expression. We then proceed to save the 
+Principal Components which we use in later vignettes for plotting.
+
+## TPM Normalized TCGA Data
+
+```{r eval=FALSE}
+rm(list=ls())
+library(SummarizedExperiment)
+library(Hmisc)
+library(ggplot2)
+library(pheatmap)
+library(RColorBrewer)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+if(!file.exists( file.path(s3_dir, "SE_objects"))){
+  stop("Please go through vignette 3 & 4 to make SE objects or download from S3 bucket")
+}
+if(!file.exists( file.path( results_dir))){
+   system(paste0("mkdir ", results_dir))
+}
+if(!file.exists( file.path( results_dir, "pca_data"))){
+   system(paste0("mkdir ", file.path(results_dir, "pca_data")))
+}
+
+maindir = file.path(results_dir, "pca_data")
+
+tcga_gdc <- get(load( file.path( s3_dir, "SE_objects","tcga_gdc_log2_TPM.RData")))
+tcga_mskcc_norm <- get(load( file.path( s3_dir, "SE_objects", 
+                                        "tcga_mskcc_norm_log2_TPM.RData")))
+tcga_mskcc_batch <- get(load( file.path( s3_dir, "SE_objects", 
+                                         "tcga_mskcc_batch_log2_TPM.RData")))
+tcga_recount2 <- get(load( file.path( s3_dir, "SE_objects", 
+                                      "tcga_recount2_log2_TPM.RData")))
+tcga_xena <- get(load( file.path( s3_dir, "SE_objects", 
+                                  "tcga_xena_log2_TPM.RData")))
+tcga_piccolo <- get(load( file.path( s3_dir, "SE_objects",
+                                     "tcga_piccolo_log2_TPM.RData")))
+
+gdc_mat = assay(tcga_gdc)
+mskcc_norm_mat=assay(tcga_mskcc_norm)
+mskcc_batch_mat=assay(tcga_mskcc_batch)
+piccolo_mat=assay(tcga_piccolo)
+recount2_mat=assay(tcga_recount2)
+xena_mat= assay(tcga_xena)
+
+myFun = function(gdc_mat, other_mat , resdir,
+               other_title, other_color)
+{
+  message("GDC_vs_", other_title)
+  message("Start Time = ", Sys.time())
+  pca_pdf = file.path(resdir, 
+            paste0("Supp_Fig1_PCA_Data_GDC_vs_",other_title,"_TPM.pdf"))
+  pca_data_file = file.path(resdir, 
+            paste0("Supp_Fig1_PCA_Data_GDC_vs_",other_title,"_TPM.txt"))
+  
+  message("Computing PCA...")
+  final1=cbind(gdc_mat, other_mat)
+  pc1= prcomp(t(final1))
+  
+  message("PCA computed .. begin writing files")
+  percentVar <- (pc1$sdev^2 / sum( pc1$sdev^2 ) )*100
+  percentVar= round(percentVar[1:2], 2)
+  message(" pc1:", percentVar[1])
+  message(" pc2:", percentVar[2])
+  
+  #save(pc1, file = file.path(resdir, paste0("pca_object_GDC_vs_",other_title,"_TPM.RData")))
+  write.table(percentVar, 
+    file.path(resdir, paste0("percentVar_GDC_vs_",other_title,"_TPM.txt"),
+    sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+  coldata1= data.frame(Project = c(rep("TCGA-GDCData",ncol(gdc_mat)),
+                                 rep(other_title, ncol(gdc_mat))))
+  pc_data1 = data.frame(PC1=pc1$x[,1], PC2=pc1$x[,2],
+                      Project = coldata1[,"Project"],
+                      sampleName = colnames(final1))
+  write.table(pc_data1, pca_data_file,
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+  
+  message("Files written successfully! ")
+  message("End Time: ",  Sys.time())
+  message("##############################")
+}
+
+myFun(gdc_mat, other_mat=xena_mat , resdir= maindir,
+    other_title="XENA_Toil", other_color="orange")
+myFun(gdc_mat, other_mat=piccolo_mat , resdir= maindir,
+    other_title="Piccolo_Lab", other_color="#E76BF3")
+myFun(gdc_mat, other_mat=recount2_mat , resdir= maindir,
+    other_title="Recount2", other_color="grey45")
+myFun(gdc_mat, other_mat=mskcc_norm_mat , resdir= maindir,
+    other_title="MSKCC_Norm", other_color="darkblue")
+myFun(gdc_mat, other_mat=mskcc_batch_mat , resdir= maindir,
+    other_title="MSKCC_BATCH", other_color="#00B0F6")
+
+
+# all datasets together
+message("PCA for all datasets .. starting .. takes a while")
+
+final_all = cbind(gdc_mat, piccolo_mat, mskcc_norm_mat, mskcc_batch_mat,
+                recount2_mat, xena_mat)
+tcga_tpm= prcomp(t(final_all))
+percentVar <- (tcga_tpm$sdev^2 / sum(tcga_tpm$sdev^2 ) )*100
+percentVar= round(percentVar[1:2], 2)
+# percentVar
+# save(tcga_tpm, file = file.path(maindir, "pca_object_TCGA_all_dataset_TPM.RData"))
+write.table(percentVar, 
+  file.path(maindir, "percentVar_TCGA_all_datasets_TPM.txt"),
+  sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+
+coldata_all = data.frame(Project = c(rep("GDC",ncol(gdc_mat)),
+                                   rep("Piccolo_Lab", ncol(gdc_mat)),
+                                   rep("MSKCC_Norma", ncol(mskcc_norm_mat)),
+                                   rep("MSKCC_BATCH", ncol(mskcc_batch_mat)),
+                                   rep("Recount2",ncol(mskcc_batch_mat)),
+                                   rep("XENA_Toil", ncol(xena_mat))  ))
+pc_data_all = data.frame(PC1=tcga_tpm$x[,1], PC2=tcga_tpm$x[,2],
+                       Project = coldata_all[,"Project"],
+                       sampleName = colnames(final_all))
+write.table(pc_data_all,
+          file.path(maindir,  "Fig1_PCA_Data_TCGA_all_datasets_TPM.txt"),
+          sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+		
+# clear all objects from memory			
+rm(list=ls())
+gc()
+
+```
+
+## TPM Normalized GTEx Data
+
+```{r eval=FALSE}
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(SummarizedExperiment)
+  library(Hmisc)
+  library(ggplot2)
+  library(pheatmap)
+  library(RColorBrewer)
+})
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+
+if(!file.exists( s3_dir, "SE_objects")){
+  stop("Please go through vignette 3 & 4 to make SE objects or download from S3 bucket")
+}
+if(!file.exists( file.path( results_dir))){
+   system(paste0("mkdir ", results_dir))
+}
+if(!file.exists( file.path( results_dir, "pca_data"))){
+   system(paste0("mkdir ", file.path(results_dir, "pca_data")))
+}
+maindir = file.path(results_dir, "pca_data")
+
+
+gtex_v6 <- get(load( file.path( s3_dir, "SE_objects","gtex_v6_log2_TPM.RData")))
+gtex_mskcc_norm <- get(load( file.path( s3_dir, "SE_objects",
+                                        "gtex_mskcc_norm_log2_TPM.RData")))
+gtex_mskcc_batch <- get(load( file.path( s3_dir, "SE_objects",
+                                         "gtex_mskcc_batch_log2_TPM.RData")))
+gtex_recount2 <- get(load( file.path( s3_dir, "SE_objects", 
+                                      "gtex_recount2_log2_TPM.RData")))
+gtex_xena <- get(load( file.path( s3_dir, "SE_objects",
+                                  "gtex_xena_log2_TPM.RData")))
+
+gtex_v6_mat = assay(gtex_v6)
+mskcc_norm_mat=assay(gtex_mskcc_norm)
+mskcc_batch_mat=assay(gtex_mskcc_batch)
+recount2_mat=assay(gtex_recount2)
+xena_mat= assay(gtex_xena)
+
+myFun = function(gtex_mat, other_mat , resdir,
+                 other_title, other_color)
+{
+  message("Gtex_v6_vs_", other_title)
+  message("Start Time = ", Sys.time())
+  rotation_file = file.path(resdir, paste0("Supp_Fig1_Rotation_Gtex_v6_vs_",other_title,"_TPM.txt"))
+  pca_pdf = file.path(resdir, paste0("Supp_Fig1_PCA_Data_Gtex_v6_vs_",other_title,"_TPM.pdf"))
+  pca_data_file = file.path(resdir, paste0("Supp_Fig1_PCA_Data_Gtex_v6_vs_",other_title,"_TPM.txt"))
+
+  message("Computing PCA...")
+
+  final1=cbind(gtex_mat, other_mat)
+  pc1= prcomp(t(final1))
+
+  
+  message("PCA computed .. begin writing files")
+
+  percentVar <- (pc1$sdev^2 / sum( pc1$sdev^2 ) )*100
+  percentVar= round(percentVar[1:2], 2)
+  message(" pc1:", percentVar[1])
+  message(" pc2:", percentVar[2])
+  
+  #save(pc1, file = file.path(resdir, paste0("pca_object_Gtex_vs_",other_title,"_TPM.RData")))
+  write.table(percentVar, 
+    file.path(resdir, paste0("percentVar_Gtex_vs_",other_title,"_TPM.txt"),
+    sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+  
+  coldata1= data.frame(Project = c(rep("GTEX-V6",ncol(gtex_mat)),
+                                   rep(other_title, ncol(gtex_mat))))
+  pc_data1 = data.frame(PC1=pc1$x[,1], PC2=pc1$x[,2],
+                        Project = coldata1[,"Project"],
+                        sampleName = colnames(final1))
+  write.table(pc_data1, pca_data_file,
+              sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+  message("Files written successfully! ")
+  message("End Time: ",  Sys.time())
+  message("##############################")
+}
+
+
+# individual datasets
+myFun(gtex_v6_mat, other_mat=xena_mat , resdir= maindir,
+      other_title="XENA_Toil", other_color="orange")
+myFun(gtex_v6_mat, other_mat=recount2_mat , resdir= maindir,
+      other_title="Recount2", other_color="grey")
+myFun(gtex_v6_mat, other_mat=mskcc_norm_mat , resdir= maindir,
+      other_title="MSKCC_Norm", other_color="darkblue")
+myFun(gtex_v6_mat, other_mat=mskcc_batch_mat , resdir= maindir,
+      other_title="MSKCC_BATCH", other_color="#00B0F6")
+
+# all datasets
+message("PCA for all datasets starting.. ")
+
+final_all = cbind(gtex_v6_mat,  mskcc_norm_mat, mskcc_batch_mat,
+                  recount2_mat, xena_mat)
+gtex_tpm= prcomp(t(final_all))
+percentVar <- (gtex_tpm$sdev^2 / sum(gtex_tpm$sdev^2 ) )*100
+percentVar= round(percentVar[1:2], 2)
+# percentVar
+#save(gtex_tpm, file = file.path(maindir, "pca_object_GTEX_all_dataset_TPM.RData"))
+write.table(percentVar, 
+  file.path(maindir, "percentVar_GTEX_all_datasets_TPM.txt"),
+  sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+coldata_all = data.frame(Project = c(rep("GTEX-V6",ncol(gtex_v6_mat)),
+                                     rep("MSKCC_Norm", ncol(mskcc_norm_mat)),
+                                     rep("MSKCC_BATCH", ncol(mskcc_batch_mat)),
+                                     rep("Recount2",ncol(recount2_mat)),
+                                     rep("XENA_Toil", ncol(xena_mat))  ))
+pc_data_all = data.frame(PC1=gtex_tpm$x[,1], PC2=gtex_tpm$x[,2],
+                         Project = coldata_all[,"Project"],
+                         sampleName = colnames(final_all))
+write.table(pc_data_all,
+            file.path(maindir,  "Fig1_PCA_Data_GTEX_all_datasets_TPM.txt"),
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+#clear all objects from memory
+rm(list=ls())
+gc()
+```

@@ -1,0 +1,380 @@
+---
+title: "Supplemental Tables"
+author: "Sonali Arora, Hamid Bolouri"
+date: "October 1, 2018"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+## Introduction
+
+In this vignette, we calculate various Supplemental Tables, as seen in our Paper.
+
+## mRNA Correlations - TCGA
+
+```{r}
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(SummarizedExperiment)
+  library(Hmisc)
+  library(ggplot2)
+  library(pheatmap)
+  library(RColorBrewer)
+})
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+if(!file.exists( s3_dir)){
+  stop("Please download from S3 bucket")
+}
+
+if(!file.exists( file.path(s3_dir, "SE_objects"))){
+  stop("Please go through vignette 3 & 4 to make SE objects or download from S3 bucket")
+}
+if(!file.exists( file.path( results_dir))){
+   system(paste0("mkdir ", results_dir))
+}
+if(!file.exists( file.path( results_dir, "tables"))){
+   system(paste0("mkdir ", file.path(results_dir, "tables")))
+}
+
+tcga_gdc <- get(load( file.path( s3_dir, "SE_objects","tcga_gdc_log2_TPM.RData")))
+tcga_mskcc_norm <- get(load( file.path( s3_dir, "SE_objects", "tcga_mskcc_norm_log2_TPM.RData")))
+tcga_mskcc_batch <- get(load( file.path( s3_dir, "SE_objects", "tcga_mskcc_batch_log2_TPM.RData")))
+tcga_recount2 <- get(load( file.path( s3_dir, "SE_objects", "tcga_recount2_log2_TPM.RData")))
+tcga_xena <- get(load( file.path( s3_dir, "SE_objects", "tcga_xena_log2_TPM.RData")))
+tcga_piccolo <- get(load( file.path( s3_dir, "SE_objects","tcga_piccolo_log2_TPM.RData")))
+
+gdc_mat = assay(tcga_gdc)
+mskcc_norm_mat=assay(tcga_mskcc_norm)
+mskcc_batch_mat=assay(tcga_mskcc_batch)
+piccolo_mat=assay(tcga_piccolo)
+recount2_mat=assay(tcga_recount2)
+xena_mat= assay(tcga_xena)
+
+genes=rownames(gdc_mat)
+mat = matrix(nrow=length(genes), ncol = 5)
+for(idx in 1:length(genes)){
+  geneName = genes[idx]
+  temp_gdc=gdc_mat[idx, ]
+  temp_xena=xena_mat[idx, ]
+  temp_gse62944=piccolo_mat[idx, ]
+  temp_recount2=recount2_mat[idx, ]
+  temp_mskcc_norm=mskcc_norm_mat[idx, ]
+  temp_mskcc_batch=mskcc_batch_mat[idx, ]
+  
+  r1 <- rcorr(cbind(temp_gdc, temp_xena, temp_gse62944,temp_recount2,
+                    temp_mskcc_norm, temp_mskcc_batch ), type="pearson")
+  
+  corr_xena = r1$r[1,2]
+  corr_gse62944= r1$r[1,3]
+  corr_recount2= r1$r[1,4]
+  corr_mskcc_norm= r1$r[1,5]
+  corr_mskcc_batch= r1$r[1,6]
+  
+  temp = c(corr_xena, corr_gse62944, corr_recount2,
+           corr_mskcc_norm, corr_mskcc_batch)
+  
+  mat[idx, ] = temp
+}
+rownames(mat)=genes
+
+colnames(mat) = c("corr_XENA_Toil", "corr_Piccolo_Lab", "corr_Recount2",
+                "corr_MSKCC_norm", "corr_MSKCC_BATCH")
+
+mat = cbind(gene=genes, mat)
+write.table(mat, file.path(results_dir, "tables", 
+            "Supp_Table_TCGA_Correlations_all_6_Datasets_log2_TPM.txt"),
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+```
+
+## mRNA Correlations - GTEx
+
+```{r}
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(SummarizedExperiment)
+  library(Hmisc)
+  library(ggplot2)
+  library(pheatmap)
+  library(RColorBrewer)
+})
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+
+if(!file.exists(s3_dir)){
+  stop("Please download from S3 bucket")
+}
+if(!file.exists(file.path(s3_dir, "SE_objects"))){
+  stop("Please go through vignette 3 & 4 to make SE objects or download from S3 bucket")
+}
+if(!file.exists( file.path( results_dir))){
+   system(paste0("mkdir ", results_dir))
+}
+if(!file.exists( file.path( results_dir, "tables"))){
+   system(paste0("mkdir ", file.path(results_dir, "tables")))
+}
+
+
+gtex_v6 <- get(load( file.path( s3_dir, "SE_objects","gtex_v6_log2_TPM.RData")))
+gtex_mskcc_norm <- get(load( file.path( s3_dir, "SE_objects","gtex_mskcc_norm_log2_TPM.RData")))
+gtex_mskcc_batch <- get(load( file.path( s3_dir, "SE_objects","gtex_mskcc_batch_log2_TPM.RData")))
+gtex_recount2 <- get(load( file.path( s3_dir, "SE_objects", "gtex_recount2_log2_TPM.RData")))
+gtex_xena <- get(load( file.path( s3_dir, "SE_objects","gtex_xena_log2_TPM.RData")))
+
+gtex_v6_mat = assay(gtex_v6)
+mskcc_norm_mat=assay(gtex_mskcc_norm)
+mskcc_batch_mat=assay(gtex_mskcc_batch)
+recount2_mat=assay(gtex_recount2)
+xena_mat= assay(gtex_xena)
+
+genes=rownames(gtex_v6_mat)
+mat = matrix(nrow=length(genes), ncol = 4)
+for(idx in 1:length(genes)){
+
+  temp_gtex_v6=gtex_v6_mat[idx, ]
+  temp_xena=xena_mat[idx, ]
+  temp_recount2=recount2_mat[idx, ]
+  temp_mskcc_norm=mskcc_norm_mat[idx, ]
+  temp_mskcc_batch=mskcc_batch_mat[idx, ]
+
+  r1 <- rcorr(cbind(temp_gtex_v6, temp_xena, temp_recount2,
+                    temp_mskcc_norm, temp_mskcc_batch ), type="pearson")
+
+  corr_xena = r1$r[1,2]
+  corr_recount2= r1$r[1,3]
+  corr_mskcc_norm= r1$r[1,4]
+  corr_mskcc_batch= r1$r[1,5]
+
+  temp = c(corr_xena, corr_recount2,
+           corr_mskcc_norm, corr_mskcc_batch)
+
+  mat[idx, ] = temp
+}
+rownames(mat)=genes
+
+colnames(mat) = c("corr_XENA_Toil",  "corr_Recount2",
+                  "corr_MSKCC_Norm", "corr_MSKCC_BATCH")
+mat = cbind(gene=genes, mat)
+write.table(mat, file.path(results_dir, "tables", 
+            "Supp_Table_GTEX_Correlations_all_6_Datasets_log2_TPM.txt"),
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+```
+
+
+## Protein-mRNA correlations
+
+```{r}
+rm(list=ls())
+
+suppressPackageStartupMessages({
+  library(SummarizedExperiment)
+  library(Hmisc)
+  library(ggplot2)
+  library(pheatmap)
+  library(RColorBrewer)
+  library(gridExtra)
+  library(grid)
+  library(beeswarm)
+})
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+if(!file.exists( s3_dir)){
+  stop("Please download from S3 bucket")
+}
+if(!file.exists(file.path(s3_dir, "SE_objects"))){
+  stop("Please go through vignette 3 & 4 to make SE objects or download from S3 bucket")
+}
+
+tcga_gdc <- get(load( file.path( s3_dir, "SE_objects","tcga_gdc_log2_TPM.RData")))
+tcga_mskcc_norm <- get(load( file.path( s3_dir, "SE_objects", "tcga_mskcc_norm_log2_TPM.RData")))
+tcga_mskcc_batch <- get(load( file.path( s3_dir, "SE_objects", "tcga_mskcc_batch_log2_TPM.RData")))
+tcga_recount2 <- get(load( file.path( s3_dir, "SE_objects", "tcga_recount2_log2_TPM.RData")))
+tcga_xena <- get(load( file.path( s3_dir, "SE_objects", "tcga_xena_log2_TPM.RData")))
+tcga_piccolo <- get(load( file.path( s3_dir, "SE_objects","tcga_piccolo_log2_TPM.RData")))
+
+tcga_gdc_mat = assay(tcga_gdc)
+tcga_mskcc_fpkm_mat=assay(tcga_mskcc_norm)
+tcga_mskcc_batch_mat=assay(tcga_mskcc_batch)
+tcga_piccolo_mat=assay(tcga_piccolo)
+tcga_recount2_mat=assay(tcga_recount2)
+tcga_xena_mat= assay(tcga_xena)
+
+rownames(tcga_gdc_mat) = rowRanges(tcga_gdc)$external_gene_name
+
+# read in protein data
+protein_dir =file.path( git_dir, "data","extdata")
+df = read.delim(file.path(protein_dir, "RPPA_RBN"),
+                header=T, stringsAsFactors=FALSE, row.names=1 )
+map = read.delim(file.path(protein_dir, "md_anderson_antibodies.probeMap"),
+                 header=T, stringsAsFactors=FALSE)
+
+# use the same gene-proteins from each source
+temp = lapply( rownames(df), function(x) {
+  g1 = unique(map[grep(x,  map[,1]), 2])
+  intersect(toupper(g1), toupper( rownames(tcga_gdc_mat)) )[1]
+
+})
+
+ix =  which(sapply(temp, is.na))
+df = df[ -ix, ]
+common_genes = unlist(temp[-ix])
+
+row_idx = match( common_genes, rownames(tcga_gdc_mat))
+
+tcga_gdc_mat = tcga_gdc_mat[row_idx, ]
+tcga_mskcc_fpkm_mat= tcga_mskcc_fpkm_mat[row_idx, ]
+tcga_mskcc_batch_mat=tcga_mskcc_batch_mat[row_idx, ]
+tcga_piccolo_mat=tcga_piccolo_mat[ row_idx, ]
+tcga_recount2_mat=tcga_recount2_mat[ row_idx, ]
+tcga_xena_mat= tcga_xena_mat[ row_idx, ]
+
+## should use the same TCGA samples from each source.
+colnames(df) = gsub("[.]","-", colnames(df))
+
+col_nms = intersect(colnames(df), substr(colnames(tcga_gdc_mat),1,15))
+
+col_idx1 = match(col_nms, colnames(df))
+col_idx2 = match(col_nms,  substr(colnames(tcga_gdc_mat),1,15))
+df = df[, col_idx1]
+
+tcga_gdc_mat = tcga_gdc_mat[,col_idx2 ]
+tcga_mskcc_fpkm_mat= tcga_mskcc_fpkm_mat[,col_idx2 ]
+tcga_mskcc_batch_mat=tcga_mskcc_batch_mat[,col_idx2 ]
+tcga_piccolo_mat=tcga_piccolo_mat[ ,col_idx2 ]
+tcga_recount2_mat=tcga_recount2_mat[ ,col_idx2 ]
+tcga_xena_mat= tcga_xena_mat[ ,col_idx2 ]
+
+mat = matrix(nrow=nrow(tcga_gdc_mat), ncol = 6)
+for(idx in 1:nrow(tcga_gdc_mat)){
+  geneName = rownames(tcga_gdc_mat)[idx]
+  protein = unlist(df[idx, ])
+
+
+  temp_gdc=tcga_gdc_mat[idx, ]
+  temp_gse62944=tcga_piccolo_mat[idx, ]
+  temp_mskcc_batch=tcga_mskcc_batch_mat[idx, ]
+  temp_mskcc_fpkm=tcga_mskcc_fpkm_mat[idx, ]
+  temp_recount2=tcga_recount2_mat[idx, ]
+  temp_xena=tcga_xena_mat[idx, ]
+
+  r1 <- rcorr(cbind(protein, temp_gdc, temp_xena, temp_gse62944,temp_recount2,
+                    temp_mskcc_fpkm,temp_mskcc_batch ), type="spearman")
+
+  corr_gdc = r1$r[1,2]
+  corr_xena = r1$r[1,3]
+  corr_gse62944= r1$r[1,4]
+  corr_recount2= r1$r[1,5]
+  corr_mskcc_fpkm= r1$r[1,6]
+  corr_mskcc_batch= r1$r[1,7]
+
+  temp = c( corr_gdc, corr_gse62944, corr_mskcc_batch, corr_mskcc_fpkm,
+            corr_recount2,corr_xena)
+
+  mat[idx, ] = temp
+}
+rownames(mat) = rownames(tcga_gdc_mat)
+mat = mat[order(as.numeric(mat[,1]), decreasing =TRUE), ]
+
+
+colnames(mat) = c("corr_protein_GDC", "corr_protein_PiccoloLab",
+                  "corr_protein_mskcc_BATCH",
+                  "corr_protein_mskcc_Norm", "corr_protein_Recount2",
+                  "corr_protein_Xena_Toil" )
+mat2 = cbind(gene = rownames(mat), mat)
+
+write.table(mat2, 
+            file.path(results_dir, "tables", 
+            "Supp_Table_TCGA_Protein_MRNA_Correlations_all_6_Datasets.txt"),
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+
+```
+
+## Table showing region types for each TCGA and GTEx Sample
+
+Note: This table is not a supplemental table in our paper, it is used internally 
+while plotting Figures and Supplemental Figures for the paper. 
+
+```{r}
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(SummarizedExperiment)
+})
+
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+if(!file.exists( s3_dir)){
+  stop("Please download from S3 bucket")
+}
+if(!file.exists(file.path(s3_dir, "SE_objects"))){
+  stop("Please go through vignette 3 & 4 to make SE objects or download from S3 bucket")
+}
+
+
+tcga_gdc <- get(load( file.path( s3_dir, "SE_objects","tcga_gdc_log2_TPM.RData")))
+tcga_types <- colData(tcga_gdc)
+
+gtex_v6 <- get(load( file.path( s3_dir, "SE_objects","gtex_v6_log2_TPM.RData")))
+gtex_types <- colData(gtex_v6)
+
+tcga_types <- as.data.frame(tcga_types)
+
+gtex_types <- as.data.frame(gtex_types)
+gtex_types <- gtex_types[, c("SAMPID","SMTS", "SMTSD", "SMNABTCH","SMNABTCHT",
+  "SMNABTCHD","SMGEBTCH","SMGEBTCHD","SMGEBTCHT")]
+colnames(gtex_types)[1:3]= c("sampleName", "sampleGroup","region")
+
+write.table(tcga_types, 
+            file.path(results_dir, "tables","Supp_Table_TCGA_Cancer_Types.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+write.table(gtex_types, 
+            file.path(results_dir, "tables", "Supp_Table_GTEX_Types.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+```

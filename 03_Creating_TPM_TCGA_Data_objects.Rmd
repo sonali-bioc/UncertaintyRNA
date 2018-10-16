@@ -1,0 +1,291 @@
+---
+title: "Creating TPM TCGA Data objects"
+author: "Sonali Arora, Hamid Bolouri"
+date: "October 1, 2018"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+## Introduction
+
+In this vignette, we subset the SummarizedExperiment objects made in the earlier
+vignette, to have common genes and samples. We also transform the data to 
+log2(TPM+0.001) and store it.
+
+Each source used a different GTF file, thus, the following annotation files were
+downloaded and stored in a folder called "annotations"  
+
+1) gencode.v23.annotation.gtf  
+2) gencode.v22.annotation.gtf  
+3) gencode.v25.annotation.gtf  
+
+```{r eval =FALSE}
+rm(list=ls())
+gc()
+suppressPackageStartupMessages({
+  library(SummarizedExperiment)
+  library(knitr)
+  library(ggplot2)
+  library(grid)
+  library(gridExtra)
+  library(Hmisc)
+  library(rtracklayer)
+  library(GenomicFeatures)
+})
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+
+if(!file.exists(s3_dir ){
+  stop("Please download data from S3 bucket! see README for details.")
+}
+if(!file.exists(git_dir ){
+  stop("Please clone github repository! see README for details.")
+}
+if(!file.exists( file.path( results_dir))){
+   system(paste0("mkdir ", file.path(results_dir)))
+}
+if(!file.exists( file.path( results_dir, "SE_objects"))){
+   system(paste0("mkdir ", file.path(results_dir, "SE_objects")))
+}
+
+dir = file.path(s3_dir, "combined_SEobjects_TCGA")
+annot_dir =file.path(s3_dir, "annotations")
+
+# load previously prepared se objects from s3 bucket!
+recount2_file= file.path(dir, "rse_gene_tcga_recount2_09_28_2018.RData")
+gdc_file=file.path(dir, "GDC_htseq_fpkm_09_28_2018.RData")
+mskcc_normalized_file=file.path(dir, "TCGA_unnormalized_RNAseqDB_09_28_2018.RData")
+mskcc_batch_effect_file=file.path(dir,  "TCGA_normalized_RNAseqDB_09_28_2018.RData")
+gse62944_file= file.path(dir,  "TCGA_gse62944_tumor_09_28_2018.RData")
+xena_file=file.path(dir,"TCGA_Xena_RSEM_FPKM_09_28_2018.RData")
+xena_file2=file.path(dir,  "TCGA_Xena_RSEM_TPM_09_28_2018.RData")
+
+load(gdc_file) # rse
+gdc=rse
+
+load(xena_file) # xena_tcga
+xena_rpkm = tcga_fpkm
+
+load(xena_file2) # xena_tcga
+xena_tpm = tcga_tpm
+
+load(gse62944_file) # TCGA_gse62944_tumor
+load(recount2_file) # rse_tcga_recount2
+load(mskcc_normalized_file) #mskcc_norm
+load(mskcc_batch_effect_file) #mskcc_batch
+```
+
+## Subset to keep only Protein-coding genes
+
+In the following chunk, we subset the SummarizedExperiment objects to only 
+protein-coding genes that are present across all data sources. 
+
+```{r eval=FALSE}
+# load gtf file for each source of data
+xena_gencode = import(file.path(annot_dir, "gencode.v23.annotation.gtf"))
+gdc_gencode = import(file.path(annot_dir,"gencode.v22.annotation.gtf"))
+recount2_gencode = import(file.path(annot_dir,"gencode.v25.annotation.gtf"))
+
+# keep only gene-level information
+xena_gencode = xena_gencode [which(xena_gencode$type=="gene"), ]
+gdc_gencode = gdc_gencode [which(gdc_gencode$type=="gene"), ]
+recount2_gencode = recount2_gencode[which(recount2_gencode$type=="gene"), ]
+
+# keep only protein coding genes for each of these sources
+gdc_prot_genes = gdc_gencode[ which(gdc_gencode$gene_type=="protein_coding"), ]
+xena_prot_genes = xena_gencode[ which(xena_gencode$gene_type=="protein_coding"), ]
+recount2_prot_genes = recount2_gencode[ which(recount2_gencode$gene_type=="protein_coding"), ]
+
+# subset recount2, xena and gdc to keep only protein coding genes
+ix = match( gdc_prot_genes$gene_id, rowRanges(gdc)$original_ensembl_gene_id )
+gdc = gdc[ na.omit(ix),  ]
+
+xena_rpkm =xena_rpkm[ na.omit(match( xena_prot_genes$gene_name, rowRanges(xena_rpkm)$gene_name )), ]
+xena_tpm=xena_tpm[ na.omit(match( xena_prot_genes$gene_name, rowRanges(xena_tpm)$gene_name )), ]
+rse_tcga_recount2 = rse_tcga_recount2[ match( recount2_prot_genes$gene_id, rownames(rse_tcga_recount2) ), ]
+
+# recount2 stores gene Names as character list
+test = lapply(rowRanges(rse_tcga_recount2)$symbol, function(x) x[1])
+
+# find common genes
+common_genes = intersect(intersect(intersect(intersect(intersect(
+  rowRanges(gdc)$external_gene_name,
+  rowRanges(xena_rpkm)$gene_name),
+  unlist(test)),
+  rownames(mskcc_norm) ),
+  rownames(mskcc_batch)),
+  rownames(TCGA_gse62944_tumor))
+
+
+# subset to common genes
+gdc=gdc[match(common_genes, rowRanges(gdc)$external_gene_name) , ]
+TCGA_gse62944_tumor=TCGA_gse62944_tumor[ match(common_genes, rownames(TCGA_gse62944_tumor)), ]
+mskcc_norm=mskcc_norm[match(common_genes,rownames(mskcc_norm)), ]
+mskcc_batch=mskcc_batch[match(common_genes,rownames(mskcc_batch)), ]
+xena_rpkm=xena_rpkm[match(common_genes, rowRanges(xena_rpkm)$gene_name),  ]
+xena_tpm=xena_tpm[match(common_genes, rowRanges(xena_tpm)$gene_name),  ]
+idx = match(common_genes, unlist(test))
+rse_tcga_recount2 = rse_tcga_recount2[idx, ]
+```
+
+## Subset to common samples
+
+In the following chunk, we subset the SummarizedExperiment objects to only
+samples that are present across all data sources. 
+
+```{r eval=FALSE}
+
+# subset to common samples
+# note: each source stores TCGA names differently
+# MSKCC source has a "." instead of "-"
+# XENA contains only first 15 characters instead of full TCGA name
+colnames(mskcc_norm) = gsub("[.]","-", colnames(mskcc_norm))
+colnames(mskcc_batch) = gsub("[.]","-", colnames(mskcc_batch))
+
+common_samples = intersect(intersect(intersect(
+  intersect( colnames(gdc),colnames(TCGA_gse62944_tumor) ),
+  colData(rse_tcga_recount2)[,1]),
+  colnames(mskcc_norm)),
+  colnames(mskcc_batch))
+
+
+ix2 =  match(substr(common_samples,1,15),  colnames(xena_rpkm))
+common_samples = common_samples[ -c(which(is.na(ix2)))]
+
+gdc = gdc[ ,match(common_samples, colnames(gdc))]
+mskcc_norm = mskcc_norm[ , match(common_samples, colnames(mskcc_norm))]
+mskcc_batch = mskcc_batch[ , match(common_samples, colnames(mskcc_batch))]
+TCGA_gse62944_tumor = TCGA_gse62944_tumor[ , match(common_samples, colnames(TCGA_gse62944_tumor))]
+rse_tcga_recount2 = rse_tcga_recount2[, match(common_samples,colData(rse_tcga_recount2)[,1] )]
+
+xena_rpkm = xena_rpkm[ , match(substr(common_samples,1,15),  colnames(xena_rpkm))]
+xena_tpm = xena_tpm[ , match(substr(common_samples,1,15),  colnames(xena_tpm))]
+
+# make sure all object have similar format for row names and column names
+colnames(rse_tcga_recount2)= colnames(gdc)
+colnames(xena_rpkm)= colnames(gdc)
+colnames(xena_tpm)= colnames(gdc)
+
+rownames(gdc)=  rownames(mskcc_norm )
+rownames(rse_tcga_recount2)=  rownames(mskcc_norm )
+rownames(xena_rpkm)=  rownames(mskcc_norm )
+rownames(xena_tpm)=  rownames(mskcc_norm )
+
+# save the rpkm objects for further use
+save(gdc, file=file.path(results_dir, "SE_objects","RPKM_gdc.RData"))
+save(mskcc_norm, file=file.path(results_dir, "SE_objects",
+                                "RPKM_mskcc_norm.RData"))
+save(mskcc_batch, file=file.path(results_dir, "SE_objects",
+                                 "RPKM_mskcc_batch.RData"))
+save(TCGA_gse62944_tumor, file=file.path(results_dir, "SE_objects",
+                                         "RPKM_TCGA_gse62944_tumor.RData"))
+save(rse_tcga_recount2, file=file.path(results_dir, "SE_objects",
+                                       "RPKM_rse_tcga_recount2.RData"))
+save(xena_rpkm, file=file.path(results_dir, "SE_objects","RPKM_xena.RData"))
+save(xena_tpm, file=file.path(results_dir, "SE_objects","xena_TPM.RData"))
+```
+
+
+## Convert to TPM
+
+RPKM counts can be converted to TPM counts using the following formula 
+```{}
+TPM = FPKM / (sum of FPKM over all genes/transcripts) * 10^6
+```
+
+For more details, see Colin Dewey's Post [here](https://groups.google.com/forum/#!topic/rsem-users/W9RQrZIOzA4)
+
+```{r eval=FALSE}
+# extract data to convert rpkm ->TPM
+gdc_mat = assay(gdc)
+mskcc_norm_mat=assay(mskcc_norm)
+mskcc_batch_mat=assay(mskcc_batch)
+TCGA_gse62944_tumor_mat=assay(TCGA_gse62944_tumor)
+rse_tcga_recount2_mat=assay(rse_tcga_recount2)
+
+# Note: xena data is present as log2(rpkm+1) OR log2(tpm+0.001)
+# so directly use TPM data for Xena, convert for other sources.
+
+#CONVERT TO tpm
+gdc_mat = apply(gdc_mat, 2, function(x){
+  (x/sum(x))*10^6
+})
+mskcc_norm_mat = apply(mskcc_norm_mat, 2, function(x){
+  (x/sum(x))*10^6
+})
+mskcc_batch_mat = apply(mskcc_batch_mat, 2, function(x){
+  (x/sum(x))*10^6
+})
+TCGA_gse62944_tumor_mat = apply(TCGA_gse62944_tumor_mat, 2, function(x){
+  (x/sum(x))*10^6
+})
+rse_tcga_recount2_mat = apply(rse_tcga_recount2_mat, 2, function(x){
+  (x/sum(x))*10^6
+})
+
+# log the TPM data
+gdc_mat=log2(gdc_mat+0.001)
+mskcc_norm_mat=log2(mskcc_norm_mat+0.001)
+mskcc_batch_mat=log2(mskcc_batch_mat+0.001)
+TCGA_gse62944_tumor_mat=log2(TCGA_gse62944_tumor_mat+0.001)
+rse_tcga_recount2_mat=log2(rse_tcga_recount2_mat+0.001)
+
+# xena ( rpkm -> TPM)
+#load("SE_objects/RPKM_xena.RData")
+xena_rpkm_mat = assay(xena_rpkm)
+test2 =2^xena_rpkm_mat - 0.001
+test3 <- apply(test2, 2, function(x){
+  (x/sum(x))*1000000
+})
+xena_mat = log2(test3+0.001)
+
+# add it back to the SE object
+assay(gdc) = gdc_mat
+assay(mskcc_norm) = mskcc_norm_mat
+assay(mskcc_batch) = mskcc_batch_mat
+assay(TCGA_gse62944_tumor) = TCGA_gse62944_tumor_mat
+assay(rse_tcga_recount2) = rse_tcga_recount2_mat
+assay(xena_rpkm) = xena_mat
+
+# remove outlier
+o1 =match("TCGA-FE-A232-01A-11R-A14Y-07", colnames(gdc_mat)) #4601
+o2 =match("TCGA-A7-A26I-01", substr(colnames(gdc_mat),1,15)) # 302
+o3 = match("TCGA-38-4625-01A-01R-1206-07", colnames(gdc_mat))
+tcga_gdc=gdc[, -c(o1, o2, o3)]
+tcga_mskcc_norm=mskcc_norm[, -c(o1, o2, o3)]
+tcga_mskcc_batch=mskcc_batch[, -c(o1, o2, o3)]
+tcga_recount2=rse_tcga_recount2[, -c(o1, o2, o3)]
+tcga_xena = xena_rpkm[, -c(o1, o2, o3)]
+tcga_piccolo = TCGA_gse62944_tumor[, -c(o1, o2, o3)]
+
+# make sure all rownames and colnames are in same format
+#already correct - since we fixed it for rpkm objects.
+
+# save TPM objects.
+save(tcga_piccolo, file = file.path(results_dir, "SE_objects",
+                                    "tcga_piccolo_log2_TPM.RData"))
+save(tcga_gdc, file = file.path(results_dir, "SE_objects",
+                                "tcga_gdc_log2_TPM.RData"))
+save(tcga_mskcc_norm, file = file.path(results_dir, "SE_objects",
+                                       "tcga_mskcc_norm_log2_TPM.RData"))
+save(tcga_mskcc_batch, file = file.path(results_dir, "SE_objects",
+                                        "tcga_mskcc_batch_log2_TPM.RData"))
+save(tcga_recount2, file = file.path(results_dir, "SE_objects",
+                                     "tcga_recount2_log2_TPM.RData"))
+save(tcga_xena, file = file.path(results_dir, "SE_objects",
+                                 "tcga_xena_log2_TPM.RData"))
+
+```

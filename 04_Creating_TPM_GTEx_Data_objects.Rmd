@@ -1,0 +1,276 @@
+---
+title: "Creating TPM GTEx Data objects"
+author: "Sonali Arora, Hamid Bolouri"
+date: "October 1, 2018"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+## Introduction
+
+In this vignette, we subset the SummarizedExperiment objects made in the earlier
+vignette, to have common genes and samples. We also transform the data to 
+log2(TPM+0.001) and store it.
+
+Each source used a different GTF file, thus, the following annotation files were
+downloaded and stored in a folder called "annotations"  
+
+1) gencode.v23.annotation.gtf  
+2) gencode.v22.annotation.gtf  
+3) gencode.v25.annotation.gtf  
+
+## Load the data
+
+```{r eval=FALSE}
+
+rm(list=ls())
+gc()
+
+suppressPackageStartupMessages({
+  library(SummarizedExperiment)
+  library(knitr)
+  library(ggplot2)
+  library(grid)
+  library(gridExtra)
+  library(Hmisc)
+  library(rtracklayer)
+  library(GenomicFeatures)
+})
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+if(!file.exists(s3_dir ){
+  stop("Please download data from S3 bucket! see README for details.")
+}
+if(!file.exists(git_dir ){
+  stop("Please clone github repository! see README for details.")
+}
+if(!file.exists( file.path( results_dir))){
+   system(paste0("mkdir ", file.path(results_dir)))
+}
+if(!file.exists( file.path( results_dir, "SE_objects"))){
+   system(paste0("mkdir ", file.path(results_dir, "SE_objects")))
+}
+
+
+dir = file.path(s3_dir, "combined_SEobjects_GTEX")
+annot_dir =file.path(s3_dir, "annotations")
+
+# load previously prepared se objects from S3 bucket.
+recount2_file= file.path(dir,  "rse_gene_gtex_recount2_09_28_2018.RData")
+gtex_file=file.path(dir,   "gtex_rpkm_09_28_2018.RData")
+mskcc_normalized_file=file.path(dir,  "GTEX_unnormalized_RNAseqDB_09_28_2018.RData")
+mskcc_batch_effect_file=file.path(dir, "GTEX_normalized_RNAseqDB_09_28_2018.RData")
+xena_file=file.path(dir,  "GTEX_Xena_RSEM_FPKM_09_28_2018.RData")
+xena_tpm= file.path(dir, "GTEX_Xena_RSEM_TPM_09_28_2018.RData")
+
+
+load(gtex_file) # gtex_original_rpkm
+
+load(xena_file)
+xena_rpkm=gtex_fpkm
+
+load(xena_tpm)
+xena_tpm=gtex_tpm
+
+load(recount2_file) # rse_gene
+load(mskcc_normalized_file)# mskcc_norm
+load(mskcc_batch_effect_file) # mskcc_batch
+```
+
+## Subset to keep only Protein-coding genes
+
+In the following chunk, we subset the SummarizedExperiment objects to only 
+protein-coding genes that are present across all data sources. 
+
+```{r eval=FALSE}
+
+xena_gencode = import(file.path(annot_dir,"gencode.v23.annotation.gtf"))
+gtex_gencode = import(file.path(annot_dir,"gencode.v19.annotation.gtf"))
+recount2_gencode = import(file.path(annot_dir,"gencode.v25.annotation.gtf"))
+
+# keep only  gene level information from each source
+xena_gencode = xena_gencode [which(xena_gencode$type=="gene"), ]
+gtex_gencode = gtex_gencode [which(gtex_gencode$type=="gene"), ]
+recount2_gencode = recount2_gencode[which(recount2_gencode$type=="gene"), ]
+
+# keep only protein coding genes for each of these sources
+gtex_prot_genes = gtex_gencode[ which(gtex_gencode$gene_type=="protein_coding"), ]
+xena_prot_genes = xena_gencode[ which(xena_gencode$gene_type=="protein_coding"), ]
+recount2_prot_genes = recount2_gencode[ which(recount2_gencode$gene_type=="protein_coding"), ]
+
+# subset recount2, xena and gtex_original_rpkm to keep only protein coding genes
+ix = match( gtex_prot_genes$gene_id, rowRanges(gtex_original_rpkm)$gene_id )
+table(is.na(ix))
+
+ix2 = match( xena_prot_genes$gene_name, rowRanges(xena_rpkm)$gene_name )
+table(is.na(ix2))
+
+ix3 = match( recount2_prot_genes$gene_id, rownames(rse_gene) )
+table(is.na(ix3))
+
+gtex_original_rpkm = gtex_original_rpkm[ na.omit(ix),  ]
+xena_rpkm =xena_rpkm[ na.omit(ix2),]
+xena_tpm=xena_tpm[ na.omit(ix2), ]
+rse_gene = rse_gene[ ix3, ]
+
+# RECOUNT2 stores geneName's as character Lists
+test = lapply(rowRanges(rse_gene)$symbol, function(x) x[1])
+
+# find common genes
+common_genes = intersect(intersect(intersect(intersect(
+  rowRanges(gtex_original_rpkm)$gene_name,
+  rowRanges(xena_rpkm)$gene_name),
+  unlist(test)),
+  rownames(mskcc_norm) ),
+  rownames(mskcc_batch))
+
+# subset to common genes
+gtex_original_rpkm=gtex_original_rpkm[match(common_genes, 
+                                rowRanges(gtex_original_rpkm)$gene_name) , ]
+
+mskcc_norm=mskcc_norm[match(common_genes,rownames(mskcc_norm)), ]
+mskcc_batch=mskcc_batch[match(common_genes,rownames(mskcc_batch)), ]
+xena_rpkm=xena_rpkm[match(common_genes, rowRanges(xena_rpkm)$gene_name),  ]
+xena_tpm=xena_tpm[match(common_genes, rowRanges(xena_tpm)$gene_name),  ]
+idx = match(common_genes, unlist(test))
+rse_gene = rse_gene[idx, ]
+
+```
+
+## Subset to common samples
+
+In the following chunk, we subset the SummarizedExperiment objects to only
+samples that are present across all data sources. 
+
+```{r eval=FALSE}
+colnames(mskcc_norm) = gsub("[.]","-", colnames(mskcc_norm))
+colnames(mskcc_batch) = gsub("[.]","-", colnames(mskcc_batch))
+
+common_samples = intersect(intersect(intersect(
+  intersect( colnames(gtex_original_rpkm),
+  colData(rse_gene)[,1]),
+  colnames(mskcc_norm)),
+  colnames(mskcc_batch)),
+  colnames(xena_rpkm))
+
+gtex_original_rpkm = gtex_original_rpkm[ ,match(common_samples, colnames(gtex_original_rpkm))]
+mskcc_norm = mskcc_norm[ , match(common_samples, colnames(mskcc_norm))]
+mskcc_batch = mskcc_batch[ , match(common_samples, colnames(mskcc_batch))]
+rse_gene = rse_gene[, match(common_samples,colData(rse_gene)[,1] )]
+
+xena_rpkm = xena_rpkm[ , match(common_samples, colnames(xena_rpkm))]
+xena_tpm = xena_tpm[ , match(common_samples, colnames(xena_tpm))]
+
+# make sure same format for row names and column names
+colnames(rse_gene) = colnames(gtex_original_rpkm)
+
+rownames(gtex_original_rpkm) = rownames(mskcc_norm)
+rownames(rse_gene) = rownames(mskcc_norm)
+rownames(xena_rpkm) = rownames(mskcc_norm)
+rownames(xena_tpm) = rownames(mskcc_norm)
+
+# save the rpkm objects for further use. 
+save(gtex_original_rpkm, file=file.path(results_dir, "SE_objects",
+                                        "RPKM_gtex_original.RData"))
+save(mskcc_norm, file=file.path(results_dir, "SE_objects",
+                                "RPKM_gtex_mskcc_norm.RData"))
+save(mskcc_batch, file=file.path(results_dir, "SE_objects",
+                                 "RPKM_gtex_mskcc_batch.RData"))
+save(rse_gene, file=file.path(results_dir, "SE_objects",
+                              "RPKM_gtex_recount2.RData"))
+save(xena_rpkm, file=file.path(results_dir, "SE_objects",
+                               "RPKM_gtex_xena.RData"))
+```
+
+## Convert to TPM
+
+RPKM counts can be converted to TPM counts using the following formula 
+```{}
+TPM = FPKM / (sum of FPKM over all genes/transcripts) * 10^6
+```
+
+For more details, see Colin Dewey's Post [here](https://groups.google.com/forum/#!topic/rsem-users/W9RQrZIOzA4)
+
+```{r eval=FALSE}
+# convert rpkm -> tpm
+gtex_original_rpkm_mat = assay(gtex_original_rpkm)
+mskcc_norm_mat=assay(mskcc_norm)
+mskcc_batch_mat=assay(mskcc_batch)
+rse_gene_mat=assay(rse_gene)
+
+# Note: xena data is present as log2(rpkm+1) OR log2(tpm+0.001)
+# so directly use TPM data for Xena, convert for other sources.
+
+#CONVERT TO tpm
+gtex_original_rpkm_mat = apply(gtex_original_rpkm_mat, 2, function(x){
+  (x/sum(x))*10^6
+})
+mskcc_norm_mat = apply(mskcc_norm_mat, 2, function(x){
+  (x/sum(x))*10^6
+})
+mskcc_batch_mat = apply(mskcc_batch_mat, 2, function(x){
+  (x/sum(x))*10^6
+})
+
+rse_gene_mat = apply(rse_gene_mat, 2, function(x){
+  (x/sum(x))*10^6
+})
+
+# log the TPM data
+gtex_original_rpkm_mat=log2(gtex_original_rpkm_mat+0.001)
+mskcc_norm_mat=log2(mskcc_norm_mat+0.001)
+mskcc_batch_mat=log2(mskcc_batch_mat+0.001)
+rse_gene_mat=log2(rse_gene_mat+0.001)
+
+# xena ( rpkm -> TPM)
+xena_rpkm_mat = assay(xena_rpkm)
+test2 =2^xena_rpkm_mat - 0.001
+test3 <- apply(test2, 2, function(x){
+  (x/sum(x))*1000000
+})
+xena_mat = log2(test3+0.001)
+
+# add it back to the SE object
+assay(gtex_original_rpkm) = gtex_original_rpkm_mat
+assay(mskcc_norm) = mskcc_norm_mat
+assay(mskcc_batch) = mskcc_batch_mat
+assay(rse_gene) = rse_gene_mat
+assay(xena_rpkm) = xena_mat
+
+# remove outlier
+# ALL DATASETS - REMOVE OUTLIER
+o1 =match("GTEX-T5JW-0726-SM-4DM6D", colnames(gtex_original_rpkm_mat)) #90
+o2 =match("GTEX-U3ZN-1626-SM-4DXTZ", colnames(gtex_original_rpkm_mat)) #92
+
+gtex_v6=gtex_original_rpkm[, -c(o1, o2)]
+gtex_mskcc_norm=mskcc_norm[, -c(o1, o2)]
+gtex_mskcc_batch=mskcc_batch[, -c(o1, o2)]
+gtex_recount2=rse_gene[, -c(o1, o2)]
+gtex_xena = xena_rpkm[, -c(o1, o2)]
+
+save(gtex_v6, file = file.path(results_dir, "SE_objects",
+                               "gtex_v6_log2_TPM.RData"))
+save(gtex_mskcc_norm, file = file.path(results_dir, "SE_objects",
+                                       "gtex_mskcc_norm_log2_TPM.RData"))
+save(gtex_mskcc_batch, file = file.path(results_dir, "SE_objects",
+                                        "gtex_mskcc_batch_log2_TPM.RData"))
+save(gtex_recount2, file = file.path(results_dir, "SE_objects",
+                                     "gtex_recount2_log2_TPM.RData"))
+save(gtex_xena, file = file.path(results_dir, "SE_objects",
+                                 "gtex_xena_log2_TPM.RData"))
+```
+
+
