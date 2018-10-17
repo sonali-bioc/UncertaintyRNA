@@ -175,14 +175,41 @@ layout = rbind( c(1, 2, 3), c(4, 5, 6))
 marrangeGrob(lst, layout_matrix = layout, top=textGrob(""))
 dev.off()
 
-pdf(file.path( results_dir, "pdf", "Supp_GTEx_nucleic_acid_batches.pdf"), 
+length(nuc_batches)
+length(geno_batch)
+
+# break up the plots into smaller files , so that the pdf produced complies
+# with github file size limit.
+# total no of plots = 136 for genotype batch 
+# 2 pdf's are made, with 72 plots each.
+
+pdf(file.path( results_dir, "pdf", "Supp_GTEx_genotype_batches_part1.pdf"), 
     width = 24, height =16)
-marrangeGrob(nuc_plot, nrow=2, ncol=3, top=textGrob(""))
+marrangeGrob(geno_plot[1:72], nrow=2, ncol=3, top=textGrob(""))
 dev.off()
 
-pdf(file.path( results_dir, "pdf", "Supp_GTEx_genotype_batches.pdf"), 
+pdf(file.path( results_dir, "pdf", "Supp_GTEx_genotype_batches_part2.pdf"), 
     width = 24, height =16)
-marrangeGrob(geno_plot, nrow=2, ncol=3, top=textGrob(""))
+marrangeGrob(geno_plot[73:136], nrow=2, ncol=3, top=textGrob(""))
 dev.off()
+
+# total no of plots = 419 for nueclic acid 
+# 6 pdf's will be made with 72 plots each
+
+mybatches <- seq(1, length(nuc_plot), 72)
+for( i in 1:length(mybatches)){
+  start_plot = mybatches[i]
+  end_plot  = mybatches[(i+1)] -1
+  if(i ==length(mybatches)){
+    end_plot = length(nuc_plot)
+  }
+  fname <- file.path(results_dir, "pdf", 
+    paste0("Supp_GTEx_nucleic_acid_batches_part",i,".pdf"))
+  
+  pdf(fname, width = 24, height =16)
+  marrangeGrob(nuc_plot[start_plot : end_plot], nrow=2, ncol=3, 
+               top=textGrob(""))
+  dev.off()
+}
 
 ```
