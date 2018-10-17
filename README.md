@@ -22,7 +22,14 @@ present in the online version of this paper.
 1) [Additional Fig 1. TCGA batch effects by PlateID](https://github.com/sonali-bioc/UncertainityRNA/blob/master/data/pdf/Supp_PCA_PlateID_batch_Binder.pdf)  
 2) [Additional Fig 2. TCGA batch effects by TSS ID](https://github.com/sonali-bioc/UncertainityRNA/blob/master/data/pdf/Supp_TCGA_PCA_TSS_batch_Binder.pdf)
 3) [Additional Fig 3. TCGA batch effects by Sequencing Center](https://github.com/sonali-bioc/UncertainityRNA/blob/master/data/pdf/Supp_TCGA_PCA_Sequening%20center_Batch_Binder.pdf)  
-
+4) [Additional Fig 4. GTEX batch effects (genotype batches) Part 1](https://github.com/sonali-bioc/UncertainityRNA/blob/master/data/pdf/Supp_GTEx_genotype_batches_part1.pdf)  
+5) [Additional Fig 5. GTEX batch effects (genotype batches) Part 2](https://github.com/sonali-bioc/UncertainityRNA/blob/master/data/pdf/Supp_GTEx_genotype_batches_part2.pdf)  
+6) [Additional Fig 6. GTEX batch effects (nucelic acid batches) Part 1](https://github.com/sonali-bioc/UncertainityRNA/blob/master/data/pdf/Supp_GTEx_nucleic_acid_batches_part1.pdf)   
+7) [Additional Fig 6. GTEX batch effects (nucelic acid batches) Part 2](https://github.com/sonali-bioc/UncertainityRNA/blob/master/data/pdf/Supp_GTEx_nucleic_acid_batches_part2.pdf)   
+8) [Additional Fig 6. GTEX batch effects (nucelic acid batches) Part 3](https://github.com/sonali-bioc/UncertainityRNA/blob/master/data/pdf/Supp_GTEx_nucleic_acid_batches_part3.pdf)   
+9) [Additional Fig 6. GTEX batch effects (nucelic acid batches) Part 4](https://github.com/sonali-bioc/UncertainityRNA/blob/master/data/pdf/Supp_GTEx_nucleic_acid_batches_part4.pdf)   
+10) [Additional Fig 6. GTEX batch effects (nucelic acid batches) Part 5](https://github.com/sonali-bioc/UncertainityRNA/blob/master/data/pdf/Supp_GTEx_nucleic_acid_batches_part5.pdf)   
+11) [Additional Fig 6. GTEX batch effects (nucelic acid batches) Part 6](https://github.com/sonali-bioc/UncertainityRNA/blob/master/data/pdf/Supp_GTEx_nucleic_acid_batches_part6.pdf)   
 
 ## Downloading Data 
 
