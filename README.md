@@ -12,7 +12,7 @@ output:
 
 This github repository contains code to reproduce the analysis in our paper 
 "Errors in RNA-seq transcript abundance estimates". A copy of the paper can be 
-found [here]()
+found [here](https://www.biorxiv.org/content/early/2018/10/17/445601)
 
 ### Additional Figures
 
