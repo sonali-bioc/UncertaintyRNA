@@ -1,7 +1,7 @@
 ---
 title: "Discordant Genes across various sources of Data"
 author: "Sonali Arora, Hamid Bolouri"
-date: "October 1, 2018"
+date: "December 6, 2018"
 output: 
   html_document:
     toc: true
@@ -193,7 +193,6 @@ gtex_lst =  list(
   xena_genes = rownames(mismatchGenesByDataset[which( mismatchGenesByDataset[,"xena_no"] >= 19), ])
 )
 
-
 # clear some objects that we don't need: 
 rm(gtex_v6)
 rm(gtex_mskcc_norm)
@@ -374,7 +373,6 @@ rm(mismatch_table_TCGA)
 ## Calculate Percentage of Discordant Genes
 
 ```{r}
-
 length(gtex_bad_genes)
 length(gtex_allgenes)
 (length(gtex_bad_genes)/ length(gtex_allgenes)) *100
@@ -390,15 +388,11 @@ bad_genes  = unique( c( tcga_bad_genes, gtex_bad_genes))
 length(bad_genes)
 (length(bad_genes)/16730 )* 100
 
-
 multimapped_discordant_genes = intersect(bad_genes, multi_mapping_genes[,3])
 length(multimapped_discordant_genes)
 (length(multimapped_discordant_genes)/ length(bad_genes))*100
 
-
-
 ```
-
 
 ## Disease causing genes that are discordant
 
@@ -422,7 +416,6 @@ cancer_genes = cancer_genes[order(cancer_genes[,2], decreasing=FALSE), ]
 cancertype = disease[match( as.character( cancer_genes[,2]), disease[,2]), ]
 cancertype = cancertype[, c(2, 4)]
 ```
-
 
 ## Save Results 
 
@@ -468,7 +461,5 @@ write.table(gtexTbl,
 write.table(tcgaTbl, 
   file.path( results_dir, "tables", "Supp_Table_TCGA_discordant_samples.txt"), 
   sep="\t", quote=FALSE, row.names=TRUE, col.names=TRUE)
-
-
 ```
 
