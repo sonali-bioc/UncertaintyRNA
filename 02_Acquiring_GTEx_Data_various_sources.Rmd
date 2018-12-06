@@ -30,8 +30,8 @@ rm(list=ls())
 
 # folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
 bigdir = dirname(getwd())
-# github directory eg: ~/Downloads/UncertainityRNA
-git_dir = file.path(bigdir,  "UncertainityRNA")
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
 # S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
 s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
 # when you run our RMD files, all results will be stored here. 
@@ -93,8 +93,8 @@ library(SummarizedExperiment)
 
 # folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
 bigdir = dirname(getwd())
-# github directory eg: ~/Downloads/UncertainityRNA
-git_dir = file.path(bigdir,  "UncertainityRNA")
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
 # S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
 s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
 # when you run our RMD files, all results will be stored here. 
@@ -171,8 +171,8 @@ library(SummarizedExperiment)
 
 # folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
 bigdir = dirname(getwd())
-# github directory eg: ~/Downloads/UncertainityRNA
-git_dir = file.path(bigdir,  "UncertainityRNA")
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
 # S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
 s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
 # when you run our RMD files, all results will be stored here. 
@@ -242,8 +242,8 @@ library(SummarizedExperiment)
 
 # folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
 bigdir = dirname(getwd())
-# github directory eg: ~/Downloads/UncertainityRNA
-git_dir = file.path(bigdir,  "UncertainityRNA")
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
 # S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
 s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
 # when you run our RMD files, all results will be stored here. 
@@ -313,8 +313,8 @@ library(recount)
 
 # folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
 bigdir = dirname(getwd())
-# github directory eg: ~/Downloads/UncertainityRNA
-git_dir = file.path(bigdir,  "UncertainityRNA")
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
 # S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
 s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
 # when you run our RMD files, all results will be stored here. 
