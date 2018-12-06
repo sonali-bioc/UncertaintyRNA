@@ -1,7 +1,7 @@
 ---
 title: "Supplemental Figures"
 author: "Sonali Arora, Hamid Bolouri"
-date: "October 1, 2018"
+date: "December 6, 2018"
 output: 
   html_document:
     toc: true
@@ -48,14 +48,14 @@ tcga_col_lst = c(
   "MSKCC" = "darkblue",
   "MSKCC Batch" ="#00B0F6" ,
   Recount2 ="grey45" ,
-  "Xena" = "orange",
+  "Xena/Toil" = "orange",
   "GDC" ="#A3A500")
 
 gtex_col_lst = c( 
   "MSKCC" = "darkblue",
   "MSKCC Batch" ="#00B0F6" ,
   Recount2 ="grey45" ,
-  "XENA" = "orange",
+  "Xena/Toil" = "orange",
   "GTEx" ="darkgreen")
 
 
@@ -97,7 +97,7 @@ gtex_percentVar_list = c(
 tcga_res = mapply(function(x,y){
   pc_data1 = read.delim(x, header=T, stringsAsFactors=FALSE)
   pc_data1$Project[which(pc_data1$Project=="Piccolo_Lab")]="Piccolo"
-  pc_data1$Project[which(pc_data1$Project=="XENA_Toil")]="Xena"
+  pc_data1$Project[which(pc_data1$Project=="XENA_Toil")]="Xena/Toil"
   pc_data1$Project[which(pc_data1$Project=="MSKCC_Norm")]="MSKCC"
   pc_data1$Project[which(pc_data1$Project=="MSKCC_BATCH")]="MSKCC Batch"
   pc_data1$Project[which(pc_data1$Project=="TCGA-GDCData")]="GDC"
@@ -122,14 +122,10 @@ tcga_res = mapply(function(x,y){
 
 
 #  make GTEx pairwise PCA plots
-
-
 gtex_res = mapply(function(x, y){
   pc_data1 = read.delim(x, header=T, stringsAsFactors=FALSE)
 
-  pc_data1$Project = gsub("Xena-Toil", "XENA", pc_data1$Project)
-
-  pc_data1$Project[which(pc_data1$Project=="XENA_Toil")]="XENA"
+  pc_data1$Project[which(pc_data1$Project=="XENA_Toil")]="Xena/Toil"
   pc_data1$Project[which(pc_data1$Project=="MSKCC_Norm")]="MSKCC"
   pc_data1$Project[which(pc_data1$Project=="MSKCC_BATCH")]="MSKCC Batch"
   pc_data1$Project[which(pc_data1$Project=="GTEX-V6")]="GTEx"
@@ -309,18 +305,18 @@ plots <- lapply( selGenes, function(gene){
     save(u2af1_lst, file="data/discordant/u2af1_tcga_expression.RData")
   }
   
-  p1 = myFun(x=temp_gdc, y=temp_xena, plot_title = "Xena vs\n GDC")
+  p1 = myFun(x=temp_gdc, y=temp_xena, plot_title = "Xena/Toil vs\n GDC")
   p1 = p1 + ylab(paste0(gene, " (log2(TPM+0.001))")) 
   
   p2 = myFun(x=temp_gdc, y=temp_recount2, plot_title = "Recount2 vs\n GDC")
   p3 = myFun(x=temp_gdc, y=temp_mskcc_norm, plot_title = "MSKCC \nvs GDC")
   p4 = myFun(x=temp_gdc, y=temp_piccolo, plot_title = "Piccolo vs\n GDC")
-  p5 = myFun(x=temp_xena, y=temp_recount2, plot_title = "Recount2 vs\n Xena")
+  p5 = myFun(x=temp_xena, y=temp_recount2, plot_title = "Recount2 vs\n Xena/Toil")
   
-  p6 = myFun(x=temp_xena, y=temp_piccolo, plot_title = "Piccolo vs\n Xena")
+  p6 = myFun(x=temp_xena, y=temp_piccolo, plot_title = "Piccolo vs\n Xena/Toil")
   p6 = p6 + ylab(paste0(gene, " (log2(TPM+0.001))"))
   
-  p7 = myFun(x=temp_xena, y=temp_mskcc_norm, plot_title = "MSKCC \nvs Xena")
+  p7 = myFun(x=temp_xena, y=temp_mskcc_norm, plot_title = "MSKCC \nvs Xena/Toil")
   p8 = myFun(x=temp_recount2, y=temp_piccolo, plot_title = "Piccolo vs\n Recount2")
   p9 = myFun(x=temp_recount2, y=temp_mskcc_norm, plot_title = "MSKCC \nvs Recount2")
   p10 = myFun(x=temp_mskcc_norm, y=temp_piccolo, plot_title = "Piccolo vs\n MSKCC")
@@ -341,6 +337,218 @@ grid.arrange(grobs = allplots ,
                                    c(16, 17, 18, 19, 20 )), 
              heights=unit(c(4,4, 4,4), c("in", "in", "in", "in")))
 dev.off()
+
+```
+
+## Pairwise scatter plots for Discordant genes in TCGA samples
+
+```{r}
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(SummarizedExperiment)
+  library(Hmisc)
+  library(ggplot2)
+  library(grid)
+  library(gridExtra)
+})
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+
+if(!file.exists(file.path( s3_dir, "SE_objects"))){
+  stop("Please go through vignette 3 & 4 to make SE objects or download from S3 bucket")
+}
+
+tcga_gdc <- get(load( file.path( s3_dir, "SE_objects","tcga_gdc_log2_TPM.RData")))
+tcga_mskcc_norm <- get(load( file.path( s3_dir, "SE_objects", "tcga_mskcc_norm_log2_TPM.RData")))
+tcga_mskcc_batch <- get(load( file.path( s3_dir, "SE_objects", "tcga_mskcc_batch_log2_TPM.RData")))
+tcga_recount2 <- get(load( file.path( s3_dir, "SE_objects", "tcga_recount2_log2_TPM.RData")))
+tcga_xena <- get(load( file.path( s3_dir, "SE_objects", "tcga_xena_log2_TPM.RData")))
+tcga_piccolo <- get(load( file.path( s3_dir, "SE_objects","tcga_piccolo_log2_TPM.RData")))
+
+geneName = rownames(tcga_gdc)
+
+gdc_mat = assay(tcga_gdc)
+mskcc_norm_mat=assay(tcga_mskcc_norm)
+mskcc_batch_mat=assay(tcga_mskcc_batch)
+piccolo_mat=assay(tcga_piccolo)
+recount2_mat=assay(tcga_recount2)
+xena_mat= assay(tcga_xena)
+
+m = 5 # pairwise max of 2 vectors.
+lf = 2; fold_no = "4fold"
+
+selGenes <- read.delim(file.path(git_dir, "data", "discordant", 
+  "TCGA_bad_genes_samples_varying_fc_across_pipelines.txt"), header=TRUE, 
+  stringsAsFactors = FALSE)[,1]
+
+
+plot_title_size =15
+axis_text_size = 15
+
+myFun  = function(x1, y1, plot_title){
+  df = data.frame(cbind( x=x1, y=y1))
+  sel = which(abs(x1- y1) > lf & pmax(x1, y1) > m)
+  color1 = rep("black", 4800)
+  color1[sel] = "red"
+  p0 = ggplot(df, aes(x=x, y=y)) +
+    geom_point(colour=color1) +
+    theme_bw(base_family="Helvetica") +
+    xlab("") +
+    ylab("")+
+    ggtitle(plot_title) +
+    scale_y_continuous(breaks=seq(2,10,2)) +
+    theme(plot.title = element_text(lineheight=.8, size=plot_title_size),
+          axis.text=element_text(size=axis_text_size),
+          axis.title = element_text(size=axis_text_size))
+  
+  p0
+}
+
+pdf(file.path(results_dir, "pdf", "Supp_Fig_TCGA_discordant_genes_examples.pdf"),
+   width = 12, height = 7)
+plots <- lapply( selGenes, function(gene){
+  idx = grep(paste0("^",gene,"$"), rownames(gdc_mat))
+  temp_gdc=gdc_mat[idx, ]
+  temp_piccolo=piccolo_mat[idx, ]
+  temp_mskcc_norm=mskcc_norm_mat[idx, ]
+  temp_recount2=recount2_mat[idx, ]
+  temp_xena=xena_mat[idx, ]
+  
+  p1 = myFun(x=temp_gdc, y=temp_xena, plot_title = "Xena/Toil vs\n GDC")
+  p1 = p1 + ylab(paste0(gene, " (log2(TPM+0.001))")) 
+  
+  p2 = myFun(x=temp_gdc, y=temp_recount2, plot_title = "Recount2 vs\n GDC")
+  p3 = myFun(x=temp_gdc, y=temp_mskcc_norm, plot_title = "MSKCC \nvs GDC")
+  p4 = myFun(x=temp_gdc, y=temp_piccolo, plot_title = "Piccolo vs\n GDC")
+  p5 = myFun(x=temp_xena, y=temp_recount2, plot_title = "Recount2 vs\n Xena/Toil")
+  
+  p6 = myFun(x=temp_xena, y=temp_piccolo, plot_title = "Piccolo vs\n Xena/Toil")
+  p6 = p6 + ylab(paste0(gene, " (log2(TPM+0.001))"))
+  
+  p7 = myFun(x=temp_xena, y=temp_mskcc_norm, plot_title = "MSKCC \nvs Xena/Toil")
+  p8 = myFun(x=temp_recount2, y=temp_piccolo, plot_title = "Piccolo vs\n Recount2")
+  p9 = myFun(x=temp_recount2, y=temp_mskcc_norm, plot_title = "MSKCC \nvs Recount2")
+  p10 = myFun(x=temp_mskcc_norm, y=temp_piccolo, plot_title = "Piccolo vs\n MSKCC")
+  
+  allplots <- list(p1, p2, p3, p4, p5, p6, p7, p8, p9 , p10)
+ 
+  layout = rbind( c(1,2,3,4,5), c(6,7,8,9,10))
+  ml <- marrangeGrob(allplots, layout_matrix = layout,
+                     top= textGrob(""))
+  print(ml)
+})
+dev.off()
+
+
+```
+
+
+## Pairwise scatter plots for Discordant genes in GTEX samples
+
+```{r}
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(SummarizedExperiment)
+  library(ggplot2)
+  library(grid)
+  library(gridExtra)
+})
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertainityRNA
+git_dir = file.path(bigdir,  "UncertainityRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+gtex_v6 <- get(load( file.path( s3_dir, "SE_objects","gtex_v6_log2_TPM.RData")))
+gtex_mskcc_norm <- get(load( file.path( s3_dir, "SE_objects","gtex_mskcc_norm_log2_TPM.RData")))
+gtex_recount2 <- get(load( file.path( s3_dir, "SE_objects", "gtex_recount2_log2_TPM.RData")))
+gtex_xena <- get(load( file.path( s3_dir, "SE_objects","gtex_xena_log2_TPM.RData")))
+
+gtex_v6_mat = assay(gtex_v6)
+mskcc_norm_mat=assay(gtex_mskcc_norm)
+recount2_mat=assay(gtex_recount2)
+xena_mat= assay(gtex_xena)
+
+selGenes <- read.delim(file.path(git_dir, "data", "discordant", 
+  "GTEX_bad_genes_samples_varying_fc_across_pipelines.txt"), header=TRUE, 
+  stringsAsFactors = FALSE)[,1]
+
+m = 5 # pairwise max of 2 vectors.
+lf = 2; fold_no = "4fold"
+
+#  make pairwise plots to check that these genes are actually discordant
+plot_title_size =15
+axis_text_size = 15
+
+myFun  = function(x1, y1, plot_title){
+  df = data.frame(cbind( x=x1, y=y1))
+  sel = which(abs(x1- y1) > lf & pmax(x1, y1) > m)
+  color1 = rep("black", 1890)
+  color1[sel] = "red"
+  p0 = ggplot(df, aes(x=x, y=y)) +
+    geom_point(colour=color1) +
+    theme_bw(base_family="Helvetica") +
+    xlab("") +
+    ylab("")+
+    ggtitle(plot_title) +
+    scale_y_continuous(breaks=seq(2,10,2)) +
+    theme(plot.title = element_text(lineheight=.8, size=plot_title_size),
+          axis.text=element_text(size=axis_text_size),
+          axis.title = element_text(size=axis_text_size))
+  
+  p0
+}
+
+pdf(file.path(results_dir, "pdf",
+  "Supp_Fig_GTEX_discordant_genes_examples.pdf"), width = 12, height = 7)
+plots <- lapply( selGenes, function(gene){
+  idx = grep(paste0("^",gene,"$"), rownames(gtex_v6_mat))
+  temp_gtex=gtex_v6_mat[idx, ]
+  temp_mskcc_norm=mskcc_norm_mat[idx, ]
+  temp_recount2=recount2_mat[idx, ]
+  temp_xena=xena_mat[idx, ]
+  
+  p1 = myFun(x=temp_gtex, y=temp_xena, plot_title = "Xena/Toil vs\n GTEX")
+  p1 = p1 + ylab(paste0(gene, " (log2(TPM+0.001))")) 
+  
+  p2 = myFun(x=temp_gtex, y=temp_recount2, plot_title = "Recount2 vs\n GTEX")
+  
+  p3 = myFun(x=temp_gtex, y=temp_mskcc_norm, plot_title = "MSKCC \nvs GTEX")
+  
+  p5 = myFun(x=temp_xena, y=temp_recount2, plot_title = "Recount2 vs\n Xena/Toil")
+  
+  p7 = myFun(x=temp_xena, y=temp_mskcc_norm, plot_title = "MSKCC \nvs Xena/Toil")
+  
+  p9 = myFun(x=temp_recount2, y=temp_mskcc_norm, plot_title = "MSKCC \nvs Recount2")
+  p9 = p9 + ylab(paste0(gene, " (log2(TPM+0.001))"))
+  
+  allplots <- list(p1, p2, p3, p5,  p7,  p9 )
+  
+  layout = rbind( c(1, 2, 3,4,5), c(6,7,8,9,10))
+  ml <- marrangeGrob(allplots, layout_matrix = layout,
+                     top= textGrob(""))
+  print(ml)
+})
+dev.off()
+
 
 ```
 
@@ -408,12 +616,12 @@ mat = read.delim(protein_result_file,
 
 
 tcga_data = rbind(
-  cbind( Value= tcga_mat[,"corr_XENA_Toil"], Group= rep("Xena", nrow(tcga_mat))) ,
+  cbind( Value= tcga_mat[,"corr_XENA_Toil"], Group= rep("Xena/Toil", nrow(tcga_mat))) ,
   cbind( Value= tcga_mat[,"corr_Piccolo_Lab"], Group= rep("Piccolo", nrow(tcga_mat))) ,
   cbind( Value= tcga_mat[,"corr_Recount2"], Group= rep("Recount2", nrow(tcga_mat))) ,
   cbind( Value= tcga_mat[,"corr_MSKCC_norm"], Group= rep("MSKCC", nrow(tcga_mat))) ,
   cbind( Value= tcga_mat[,"corr_MSKCC_BATCH"], Group= rep("MSKCC Batch", nrow(tcga_mat))) )
-group_levels=c("Xena", "Piccolo","Recount2", 
+group_levels=c("Xena/Toil", "Piccolo","Recount2", 
                "MSKCC","MSKCC Batch")
 group_colors= c("orange", "#E76BF3","grey45", "darkblue", "#00B0F6" )
 
@@ -445,26 +653,26 @@ tcga_cor= ggplot(tcga_data, aes(x = Group, y = Value, color=Group )) +
                      values = group_colors) +
   guides(fill=FALSE) +
   guides(color=FALSE) +
-  annotate("text", label = length(which(tcga_mat[,"corr_Piccolo_Lab"] < 0.8)) ,
-           x = 0.8, y = 0.75, size = text_size, colour = "red") +
-  annotate("text", label = length(which(tcga_mat[,"corr_MSKCC_BATCH"] < 0.8))  ,
-           x = 1.8, y = 0.75, size = text_size, colour = "red") +
-  annotate("text", label = length(which(tcga_mat[,"corr_MSKCC_norm"] < 0.8))  ,
-           x = 2.8, y = 0.75, size = text_size, colour = "red") +
-  annotate("text", label = length(which(tcga_mat[,"corr_Recount2"] < 0.8))  ,
-           x = 3.8, y = 0.75, size = text_size, colour = "red") +
   annotate("text", label = length(which(tcga_mat[,"corr_XENA_Toil"] < 0.8)) ,
+           x = 0.8, y = 0.75, size = text_size, colour = "red") +
+  annotate("text", label = length(which(tcga_mat[,"corr_Piccolo_Lab"] < 0.8))  ,
+           x = 1.8, y = 0.75, size = text_size, colour = "red") +
+  annotate("text", label = length(which(tcga_mat[,"corr_Recount2"] < 0.8))  ,
+           x = 2.8, y = 0.75, size = text_size, colour = "red") +
+  annotate("text", label = length(which(tcga_mat[,"corr_MSKCC_norm"] < 0.8))  ,
+           x = 3.8, y = 0.75, size = text_size, colour = "red") +
+  annotate("text", label = length(which(tcga_mat[,"corr_MSKCC_BATCH"] < 0.8)) ,
            x = 4.8, y = 0.75, size = text_size, colour = "red") +
   geom_hline(aes(yintercept = 0.8), linetype="dashed", colour="red")
 
 
 gtex_data = rbind(
-  cbind( Value= gtex_mat[,"corr_XENA_Toil"], Group= rep("Xena", nrow(gtex_mat))) ,
+  cbind( Value= gtex_mat[,"corr_XENA_Toil"], Group= rep("Xena/Toil", nrow(gtex_mat))) ,
   cbind( Value= gtex_mat[,"corr_Recount2"], Group= rep("Recount2", nrow(gtex_mat))) ,
   cbind( Value= gtex_mat[, "corr_MSKCC_Norm"], Group= rep("MSKCC", nrow(gtex_mat))) ,
   cbind( Value= gtex_mat[,"corr_MSKCC_BATCH"], Group= rep("MSKCC Batch", nrow(gtex_mat))) )
 
-group_levels2=c("Xena", "Recount2","MSKCC", "MSKCC Batch")
+group_levels2=c("Xena/Toil", "Recount2","MSKCC", "MSKCC Batch")
 group_colors2= c("orange","grey45", "darkblue", "#00B0F6")
 
 gtex_data = as.data.frame(gtex_data, stringsAsFactors=FALSE)
@@ -493,13 +701,13 @@ gtex_cor=ggplot(gtex_data, aes(x = Group, y = Value, fill=Group)) +
                     labels = group_levels2,
                     values = group_colors2) +
   guides(fill=FALSE) +
-  annotate("text", label = length(which(gtex_mat[,"corr_MSKCC_BATCH"] < 0.8))  ,
+  annotate("text", label = length(which(gtex_mat[,"corr_XENA_Toil"] < 0.8))  ,
            x = 0.7, y = 0.75, size = text_size, colour = "red") +
-  annotate("text", label = length(which(gtex_mat[,"corr_MSKCC_Norm"] < 0.8))  ,
-           x = 1.7, y = 0.75, size = text_size, colour = "red") +
   annotate("text", label = length(which(gtex_mat[,"corr_Recount2"] < 0.8))  ,
+           x = 1.7, y = 0.75, size = text_size, colour = "red") +
+  annotate("text", label = length(which(gtex_mat[,"corr_MSKCC_Norm"] < 0.8))  ,
            x = 2.7, y = 0.75, size = text_size, colour = "red") +
-  annotate("text", label = length(which(tcga_mat[,"corr_XENA_Toil"] < 0.8)) ,
+  annotate("text", label = length(which(tcga_mat[,"corr_MSKCC_BATCH"] < 0.8)) ,
            x = 3.7, y = 0.75, size = text_size, colour = "red") +
   geom_hline(aes(yintercept = 0.8), linetype="dashed", colour="red")
 
@@ -511,9 +719,9 @@ prot_data = rbind(
   cbind( Value= mat[,"corr_protein_mskcc_BATCH"], Group= rep("MSKCC Batch", nrow(mat))) ,
   cbind( Value= mat[,"corr_protein_mskcc_Norm"], Group= rep("MSKCC", nrow(mat))) ,
   cbind( Value= mat[,"corr_protein_Recount2"], Group= rep("Recount2", nrow(mat))),
-  cbind( Value= mat[,"corr_protein_Xena_Toil"], Group= rep("Xena", nrow(mat)))   )
+  cbind( Value= mat[,"corr_protein_Xena_Toil"], Group= rep("Xena/Toil", nrow(mat)))   )
 
-group_levels3=c("GDC", "Xena", "Piccolo", "Recount2","MSKCC", "MSKCC Batch")
+group_levels3=c("GDC", "Xena/Toil", "Piccolo", "Recount2","MSKCC", "MSKCC Batch")
 group_colors3= c("#A3A500",  "orange","#E76BF3", "grey45", "darkblue", "#00B0F6")
    
 prot_data = as.data.frame(prot_data, stringsAsFactors=FALSE)
@@ -525,7 +733,7 @@ colnames(beeswarm) = gsub("x.orig", "DataSource", colnames(beeswarm))
 beeswarm[,"DataSource"] = factor(beeswarm[,"DataSource"],levels = group_levels3)
 
 dodge <- position_dodge(width = 0.4)
-prot1 =   ggplot(beeswarm, aes(x, y, colour = DataSource)) +
+prot_cor =   ggplot(beeswarm, aes(x, y, colour = DataSource)) +
   geom_boxplot(aes(x, y, group = DataSource),
                width=.1, outlier.color = NA, position=dodge, fill="white") +
   geom_point( aes(colour=DataSource), shape=16) +
@@ -550,7 +758,7 @@ prot1 =   ggplot(beeswarm, aes(x, y, colour = DataSource)) +
 pdf(file.path( results_dir, "pdf", "Supp_Fig7_correlations.pdf"), 
     width =24, height =12)
 layout <- rbind( c(1, 2, 3))
-nat3= list(tcga_cor, gtex_cor, prot1)
+nat3= list(tcga_cor, gtex_cor, prot_cor)
 marrangeGrob(nat3, layout_matrix = layout, top="")
 dev.off()
 
