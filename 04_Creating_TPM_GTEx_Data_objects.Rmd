@@ -1,7 +1,7 @@
 ---
 title: "Creating TPM GTEx Data objects"
 author: "Sonali Arora, Hamid Bolouri"
-date: "October 1, 2018"
+date: "December 6, 2018"
 output: 
   html_document:
     toc: true
@@ -65,7 +65,7 @@ if(!file.exists( file.path( results_dir, "SE_objects"))){
 }
 
 
-dir = file.path(s3_dir, "combined_SEobjects_GTEX")
+dir = file.path(s3_dir, "combined_SEobjects")
 annot_dir =file.path(s3_dir, "annotations")
 
 # load previously prepared se objects from S3 bucket.
@@ -202,7 +202,8 @@ RPKM counts can be converted to TPM counts using the following formula
 TPM = FPKM / (sum of FPKM over all genes/transcripts) * 10^6
 ```
 
-For more details, see Colin Dewey's Post [here](https://groups.google.com/forum/#!topic/rsem-users/W9RQrZIOzA4)
+For more details, see Colin Dewey's Post [here](https://groups.google.com/forum/#!topic/rsem-users/W9RQrZIOzA4) 
+and section 1.1.1 of [Paper](https://academic.oup.com/bioinformatics/article/26/4/493/243395). 
 
 ```{r eval=FALSE}
 # convert rpkm -> tpm
