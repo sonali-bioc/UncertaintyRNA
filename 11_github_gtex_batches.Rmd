@@ -1,7 +1,7 @@
 ---
 title: "Batches in GTEx Data"
 author: "Sonali Arora, Hamid Bolouri"
-date: "October 1, 2018"
+date: "December 1, 2018"
 output: 
   html_document:
     toc: true
@@ -71,7 +71,7 @@ gtex_pc_data_all = read.delim(gtex_batch_fls, header=TRUE,
 percentVar =read.delim( gtex_tpm_percentVar, header=FALSE, 
                           stringsAsFactors = FALSE)[,1]
 
-gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="XENA_Toil")]="XENA-Toil"
+gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="XENA_Toil")]="XENA/Toil"
 gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="MSKCC_Norm")]="MSKCC-Normalized"
 gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="MSKCC_BATCH")]="MSKCC-Batch"
 
@@ -80,6 +80,7 @@ gtex_pc_data_all$nucelic_batch = b1
 
 b2 = types[match(gtex_pc_data_all$sampleName, types[,"sampleName"]), "SMGEBTCH"]
 gtex_pc_data_all$genotype_batch =b2
+
 ```
 
 ## Nucleic Acid Batches in GTEx Data
@@ -156,7 +157,6 @@ geno_plot = lapply(geno_batch, function(x){
                        values=c( 0.2, 1))
   p1
 })
-
 ```
 
 ## Supplemental Figure for GTEx Batches
@@ -211,5 +211,4 @@ for( i in 1:length(mybatches)){
                top=textGrob(""))
   dev.off()
 }
-
 ```
