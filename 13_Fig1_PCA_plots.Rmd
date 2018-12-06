@@ -1,7 +1,7 @@
 ---
 title: "PCA plots for various sources of TCGA and GTEx Data"
 author: "Sonali Arora, Hamid Bolouri"
-date: "October 1, 2018"
+date: "December 6, 2018"
 output: 
   html_document:
     toc: true
@@ -55,14 +55,14 @@ tcga_use_cols = c( "forestgreen", "#000000", "#0082c8", "#aa6e28",
             "#808000")
 
 tcga_col_lst = c( "GDC" ="#A3A500",
-                  "Xena" = "orange",
+                  "Xena/Toil" = "orange",
              "MSKCC" = "darkblue",
              "MSKCC Batch" ="#00B0F6" ,
              "Piccolo"= "#E76BF3",
              Recount2 ="grey45")
          
 gtex_col_lst = c(  "GTEx" ="darkgreen",
-                   "Xena" = "orange",
+                   "Xena/Toil" = "orange",
                   "MSKCC" = "darkblue",
                   "MSKCC Batch" ="#00B0F6" ,
                   Recount2 ="grey45")
@@ -107,7 +107,7 @@ if(!all(check_file)){
 
 ```{r tcga-rpkm}
 pc_data_all = read.delim(tcga_rpkm_fls, header=T, stringsAsFactors = FALSE)
-pc_data_all$Project[which(pc_data_all$Project=="XENA_Toil")]="Xena"
+pc_data_all$Project[which(pc_data_all$Project=="XENA_Toil")]="Xena/Toil"
 pc_data_all$Project[which(pc_data_all$Project=="MSKCC_Norma")]="MSKCC"
 pc_data_all$Project[which(pc_data_all$Project=="MSKCC_BATCH")]="MSKCC Batch"
 pc_data_all$Project[which(pc_data_all$Project=="Piccolo_Lab")]="Piccolo"
@@ -150,7 +150,7 @@ rpkm2 = ggplot(pc_data_all, aes(PC1, PC2, color=TumorType)) +
 ```{r gtex-rpkm}
 gtex_pc_data_all = read.delim(gtex_rpkm_fls, header=TRUE, stringsAsFactors = FALSE)
 
-gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="XENA_Toil")]="Xena"
+gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="XENA_Toil")]="Xena/Toil"
 gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="MSKCC_Norm")]="MSKCC"
 gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="MSKCC_BATCH")]="MSKCC Batch"
 gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="GTEX-V6")]="GTEx"
@@ -209,7 +209,7 @@ rpkm3 = ggplot(gtex_pc_data_all, aes(PC1, PC2, color=Project)) +
 
 ```{r tcga-tpm}
 pc_data_all = read.delim(tcga_tpm_fls, header=TRUE, stringsAsFactors = FALSE)
-pc_data_all$Project[which(pc_data_all$Project=="XENA_Toil")]="Xena"
+pc_data_all$Project[which(pc_data_all$Project=="XENA_Toil")]="Xena/Toil"
 pc_data_all$Project[which(pc_data_all$Project=="MSKCC_Norma")]="MSKCC"
 pc_data_all$Project[which(pc_data_all$Project=="MSKCC_BATCH")]="MSKCC Batch"
 pc_data_all$Project[which(pc_data_all$Project=="Piccolo_Lab")]="Piccolo"
@@ -252,7 +252,7 @@ p2 = ggplot(pc_data_all, aes(PC1, PC2, color=TumorType)) +
 ```{r gtex-tpm}
 gtex_pc_data_all = read.delim(gtex_tpm_fls, header=T, stringsAsFactors = FALSE)
 
-gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="XENA_Toil")]="Xena"
+gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="XENA_Toil")]="Xena/Toil"
 gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="MSKCC_Norm")]="MSKCC"
 gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="MSKCC_BATCH")]="MSKCC Batch"
 gtex_pc_data_all$Project[which(gtex_pc_data_all$Project=="GTEX-V6")]="GTEx"
