@@ -1,7 +1,7 @@
 ---
 title: "Acquiring GTEX Data"
 author: "Sonali Arora, Hamid Bolouri"
-date: "October 1, 2018"
+date: "December 6, 2018"
 output: 
   html_document:
     toc: true
@@ -72,9 +72,9 @@ save(gtex_original_rpkm,file=file.path(results_dir, "combined_SEobjects",
 
 ```
 
-## GTEX data from Xena-Toil 
+## GTEX data from Xena/Toil 
 
-The following files were downloaded from Toil via
+The following files were downloaded from Xena/Toil via
 [UCSC Xena's website](https://xenabrowser.net/datapages/?hub=https://toil.xenahubs.net:443)  
 
 1) TCGA_GTEX_category.txt  
@@ -156,7 +156,6 @@ save(gtex_tpm, file = file.path(results_dir,"combined_SEobjects",
                                 "GTEX_Xena_RSEM_TPM_09_28_2018.RData"))
 ```				 
 
-
 ## GTEX data from MSKCC (MSKCC)
 
 The data subfolder was downloaded from [github website](https://github.com/mskcc/RNAseqDB)
@@ -234,8 +233,7 @@ save(mskcc_norm, file=file.path(results_dir, "combined_SEobjects",
 The data subfolder was downloaded from [github website](https://github.com/mskcc/RNAseqDB)
 by cloning the git repository. 
 
-Note: The authors call this data "normalized" meaning it has been batch-corrected. We refer to this  data source 
-as "MSKCC-Batch".
+Note: The authors call this data "normalized" meaning it has been batch-corrected. We refer to this  data source as "MSKCC-Batch".
 
 ```{r eval=FALSE}
 rm(list=ls())
