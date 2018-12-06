@@ -1,7 +1,7 @@
 ---
 title: "Acquiring TCGA Data"
 author: "Sonali Arora, Hamid Bolouri"
-date: "October 1, 2018"
+date: "December 6, 2018"
 output: 
   html_document:
     toc: true
@@ -177,7 +177,7 @@ save(rse, file=file.path(results_dir,
 
 ```
 
-## TCGA data from Xena-Toil 
+## TCGA data from Xena/Toil 
 
 The following files were downloaded from Toil via
 [UCSC Xena's website](https://xenabrowser.net/datapages/?hub=https://toil.xenahubs.net:443)  
