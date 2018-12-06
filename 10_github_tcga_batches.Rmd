@@ -1,7 +1,7 @@
 ---
 title: "Batches in TCGA Data"
 author: "Sonali Arora, Hamid Bolouri"
-date: "October 1, 2018"
+date: "December 6, 2018"
 output: 
   html_document:
     toc: true
@@ -223,7 +223,7 @@ r2 =lapply(types, function(x){
   p11 = myBatchPCAPlot(mat=temp_gdc, TCGA_Batch=PlateId,
                      title= "GDC")
   p12= myBatchPCAPlot(mat=temp_xena, TCGA_Batch=PlateId,
-                       title=  "Xena")
+                       title=  "Xena/Toil")
   p13 = myBatchPCAPlot(mat=temp_gse62944, TCGA_Batch=PlateId,
                        title= "Piccolo")
   p14 = myBatchPCAPlot(mat=temp_recount2, TCGA_Batch=PlateId,
@@ -267,7 +267,7 @@ r1= lapply(types, function(x){
   p11 = myBatchPCAPlot(mat=temp_gdc, TCGA_Batch=tssID,
                      title= "GDC")
   p12= myBatchPCAPlot(mat=temp_xena, TCGA_Batch=tssID,
-                       title=  "Xena")
+                       title=  "Xena/Toil")
   p13 = myBatchPCAPlot(mat=temp_gse62944, TCGA_Batch=tssID,
                        title= "Piccolo")
   p14 = myBatchPCAPlot(mat=temp_recount2, TCGA_Batch=tssID,
@@ -276,7 +276,7 @@ r1= lapply(types, function(x){
                        title=  "MSKCC")
   p16 = myBatchPCAPlot(mat=temp_mskcc_batch, TCGA_Batch=tssID,
                        title=  "MSKCC Batch")
-
+  
   mylegend<-g_legend(p11)
   grid.arrange(arrangeGrob(p11 + theme(legend.position="none"),
                            p12 + theme(legend.position="none"),
@@ -284,9 +284,9 @@ r1= lapply(types, function(x){
                            p14 + theme(legend.position="none"),
                            p15 + theme(legend.position="none"),
                            p16 + theme(legend.position="none"),
-                           ncol=2,
-                           top=textGrob(paste0("TCGA-",x," Batch Plots- TSS ID"))),
-               mylegend, ncol=2,heights=c(15,5))
+                           nrow=2, 
+                           top=textGrob(paste0("TCGA-",x," Batch Plots-TSS ID"))),
+               mylegend, nrow=2,heights=c(10,2))
 
 })
 dev.off()
@@ -311,7 +311,7 @@ r1= lapply(types, function(x){
   p11 = myBatchPCAPlot(mat=temp_gdc, TCGA_Batch=seqID,
                      title= "GDC")
   p12= myBatchPCAPlot(mat=temp_xena, TCGA_Batch=seqID,
-                       title=  "Xena")
+                       title=  "Xena/Toil")
   p13 = myBatchPCAPlot(mat=temp_gse62944, TCGA_Batch=seqID,
                        title= "Piccolo")
   p14 = myBatchPCAPlot(mat=temp_recount2, TCGA_Batch=seqID,
