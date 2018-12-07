@@ -1,0 +1,946 @@
+---
+title: "Questions regarding conversion from FPKM to TPM values"
+author: "Sonali Arora, Hamid Bolouri"
+date: "December 7, 2018"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+## Introduction
+
+RPKM counts can be converted to TPM counts using the following formula 
+```{}
+TPM = FPKM / (sum of FPKM over all genes/transcripts) * 10^6
+```
+
+For more details, see Colin Dewey's Post [here](https://groups.google.com/forum/#!topic/rsem-users/W9RQrZIOzA4)
+and section 1.1.1 of this [Paper](https://academic.oup.com/bioinformatics/article/26/4/493/243395). 
+Two important questions can be raised and are discussed in this vignette.   
+
+## Question 1: when to convert RPKM to TPM values? 
+
+There are potentially two approaches to converting the RPKM gene expression
+values to TPM gene expression values:
+
+Approach 1 - (used in our manuscript, described in Vignette 7) 
+First subset each of the datasets to the set of protein coding genes found across
+all data sources, and then apply the above mentioned formula.
+
+Approach 2 - For each dataset source, convert RPKM gene expression values 
+(variable number of genes in each source) to TPM gene expression value, 
+and then subset each data source to contain only protein coding genes.
+
+We chose approach 1, as TPM is essentially a ratio (transcripts per million), 
+and if each dataset has a different number of genes, the TPM values 
+will be shifted by the total number of genes in per data source. 
+
+To verify and demonstrate this issue, we implement Approach 2 below 
+(ie we convert RPKM gene expression values (variable number of genes in 
+each data source) to TPM gene expression value, and then subset each data 
+source to contain only shared protein coding genes). 
+
+Please see the Appendix towards the end of of this vignette to make the SE objects
+using Approach 2.
+
+For illustrative purposes, below we use the Approach 2 SE objects to find 
+the discordant no of genes in TCGA and GTEx sources. We find a much a 
+large no of discordant genes (~45%).
+
+```{r eval=FALSE}
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(SummarizedExperiment)
+  library(Hmisc)
+  library(ggplot2)
+  library(pheatmap)
+  library(RColorBrewer)
+  library(eulerr)
+  library(UpSetR)
+  library(grid)
+  library(gridExtra)
+})
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(s3_dir, "approach2_TPM_SEobjects")
+
+m = 5 # pairwise max of 2 vectors.
+lf = 2; fold_no = "4fold" #log2(4 +0.01) ; 
+
+tcga_gdc <- get(load( file.path( results_dir,"tcga_gdc_log2_TPM.RData")))
+tcga_mskcc_norm <- get(load( file.path( results_dir, "tcga_mskcc_norm_log2_TPM.RData")))
+tcga_mskcc_batch <- get(load( file.path( results_dir, "tcga_mskcc_batch_log2_TPM.RData")))
+tcga_recount2 <- get(load( file.path(results_dir, "tcga_recount2_log2_TPM.RData")))
+tcga_xena <- get(load( file.path(results_dir, "tcga_xena_log2_TPM.RData")))
+tcga_piccolo <- get(load( file.path( results_dir,"tcga_piccolo_log2_TPM.RData")))
+
+geneName = rownames(tcga_gdc)
+
+gdc_mat = assay(tcga_gdc)
+mskcc_fpkm_mat=assay(tcga_mskcc_norm)
+mskcc_batch_mat=assay(tcga_mskcc_batch)
+piccolo_mat=assay(tcga_piccolo)
+recount2_mat=assay(tcga_recount2)
+xena_mat= assay(tcga_xena)
+
+mismatch_genes_TCGA = sapply( 1:  nrow(gdc_mat), function(idx){
+  temp_gdc=gdc_mat[idx, ]
+  temp_piccolo=piccolo_mat[idx, ]
+  temp_mskcc_batch=mskcc_batch_mat[idx, ]
+  temp_mskcc_fpkm=mskcc_fpkm_mat[idx, ]
+  temp_recount2=recount2_mat[idx, ]
+  temp_xena=xena_mat[idx, ]
+  
+  diff_no = length(unique( c(
+    which(abs(temp_gdc- temp_xena) > lf & pmax(temp_gdc, temp_xena) > m   ),
+    which(abs(temp_gdc- temp_recount2) > lf & pmax(temp_gdc, temp_recount2) > m ),
+    which(abs(temp_gdc- temp_mskcc_fpkm) > lf & pmax(temp_gdc, temp_mskcc_fpkm) > m ),
+    which(abs(temp_gdc- temp_piccolo) > lf & pmax(temp_gdc, temp_piccolo) > m ),
+    
+    which(abs(temp_xena- temp_recount2) > lf & pmax(temp_recount2, temp_xena) > m ),
+    which(abs(temp_xena- temp_piccolo) > lf & pmax(temp_piccolo, temp_xena) > m ),
+    which(abs(temp_xena- temp_mskcc_fpkm) > lf & pmax(temp_mskcc_fpkm, temp_xena) > m ),
+    
+    which(abs(temp_recount2- temp_piccolo) > lf  & pmax(temp_recount2, temp_piccolo) > m),
+    which(abs(temp_recount2- temp_mskcc_fpkm) > lf  & pmax(temp_recount2, temp_mskcc_fpkm) > m),
+    
+   which(abs(temp_mskcc_fpkm- temp_piccolo) > lf & pmax(temp_mskcc_fpkm, temp_piccolo) > m)
+    
+  )))
+  diff_no
+})
+names(mismatch_genes_TCGA) = geneName
+tcga_bad_genes= names(which(mismatch_genes_TCGA > 48))
+tcga_allgenes = geneName
+
+length(tcga_bad_genes) # 7302
+length(tcga_allgenes) # 16109
+(length(tcga_bad_genes)/ 16109)*100 #  45.3287
+
+# compare with discordant genes using approach#1
+tcga_v1 <- read.delim(file.path(git_dir, "data/discordant/tcga_bad_genes_4fold.txt"), 
+                       header=FALSE, stringsAsFactors=FALSE)[,1]
+length(tcga_v1) # 1637
+length( intersect( tcga_v1, tcga_bad_genes )) # 1401
+library(eulerr)
+lst = list(convertedTPMapproach=tcga_v1, OriginalTPMapproach = tcga_bad_genes)
+fit <- euler(lst, shape = "ellipse")
+v0 = plot(fit, fontsize=16, quantities = list(fontsize = 16))
+v0
+
+```
+
+## Question 2: which source to use for Xena Toil ? 
+
+For XENA Toil, the authors have provided both FRPM and TPM normalized
+data. For other sources only FPKM data is available, and we can use the 
+above mentioned formula to create TPM expression data. For Xena Toil, should we use 
+TPM normalized data provided by the authors, or should we use 
+converted TPM data from FPK data. 
+
+### Compare the 'converted
+TPM normalized' values to the 'original TPM normalized values' for Xena Toil
+
+Xena Toil has included FPKM  and TPM normalized data for all the ~60k genes. 
+Without subsetting for any genes, we converted the RPKM normalized values to 
+TPM normalized value using the formula above. We then compared these 'converted
+TPM normalized' values to the 'original TPM normalized values' (directly 
+downloaded from Xena Toil).
+
+```{r eval =FALSE}
+rm(list=ls())
+gc()
+library(rtracklayer)
+library(SummarizedExperiment)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# approach-2 rse object
+tcga_tpm <- get(load(file.path(s3_dir,"approach2_TPM_SEobjects", "XENA_TCGA_TPM_11_15_2018.RData")))
+tcga_tpm_mat <- assay(tcga_tpm)
+
+gtex_tpm <- get(load(file.path(s3_dir, "approach2_TPM_SEobjects", "XENA_GTEX_TPM_11_15_2018.RData")))
+gtex_tpm_mat <- assay(gtex_tpm)
+
+# 'original TPM normalized values' 
+orig_tpm <- file.path(s3_dir, "datasource_XENA", "TcgaTargetGtex_rsem_gene_tpm")
+orig_tpm <- read.delim(orig_tpm, header=TRUE, stringsAsFactors=FALSE,
+                       row.names=1)
+colnames(orig_tpm) = gsub("\\.", "-", colnames(orig_tpm))
+
+orig_tcga_tpm <- orig_tpm[ , match(colnames(tcga_tpm), colnames(orig_tpm))]
+orig_gtex_tpm <- orig_tpm[ , match(colnames(gtex_tpm), colnames(orig_tpm))]
+
+orig_gtex_tpm <- orig_gtex_tpm[match(rownames(gtex_tpm_mat), rownames(orig_gtex_tpm)), ]
+
+# approach-2 rse object
+identical ( rownames(tcga_tpm_mat), rownames(orig_tcga_tpm))
+identical ( rownames(gtex_tpm_mat), rownames(orig_gtex_tpm))
+dim(tcga_tpm_mat)
+dim(gtex_tpm_mat)
+dim(orig_tcga_tpm)
+dim(orig_gtex_tpm)
+
+orig_tcga_tpm[orig_tcga_tpm < 0] <- 0
+orig_gtex_tpm[orig_gtex_tpm < 0 ] <- 0
+
+tcga_tpm_mat[tcga_tpm_mat < 0] <- 0
+gtex_tpm_mat[gtex_tpm_mat < 0 ] <- 0
+
+diff_tcga <- orig_tcga_tpm- tcga_tpm_mat
+diff_gtex <- orig_gtex_tpm- gtex_tpm_mat
+
+dim(diff_tcga)
+dim(diff_gtex)
+
+min(diff_tcga) # -0.02153736
+max(diff_tcga) # 0.02110396
+
+min(diff_gtex) # -0.01876011
+max(diff_gtex) # 0.0187096
+
+summary(unlist(diff_tcga))
+#       Min.    1st Qu.     Median       Mean    3rd Qu.       Max. 
+# -2.154e-02  0.000e+00  0.000e+00 -2.150e-07  0.000e+00  2.110e-02 
+
+summary(unlist(diff_gtex))
+#       Min.    1st Qu.     Median       Mean    3rd Qu.       Max. 
+# -1.876e-02  0.000e+00  0.000e+00 -4.810e-07  0.000e+00  1.871e-02
+```
+
+### Use 'original TPM normalized values' for Xena Toil and 'converted
+TPM normalized' values for all other sources.
+
+The only change between this calculation and the vignette #7, is that here we
+use log2(TPM+0.01) values which were directly downloaded from Xena/Toil.
+(instead of taking the log2(RPKM+0.01) values from Xena/Toil 
+and converting them to log2(TPM+0.01) using the above shown formula.) 
+
+For Recount2, MSKCC, Piccolo lab and GDC, because log2(tpm+0.001) were not 
+available, we used log2(TPM+0.01) values which were converted from 
+log2(RPKM+0.01) using the above shown formula 
+
+First, we will calculate the Discordant genes and samples for GTEx Data, 
+followed by calculation of discordant genes and samples for TCGA data. For a 
+gene to be discordant, expression of gene in 1 data set should be more than 
+32 TPM (i.e. log2 TPM more than 5) and the log2 fold change should be more 
+than 2 (i.e. >4-fold difference in expression). 
+
+#### Discordant Genes in GTEx
+
+```{r eval =FALSE}
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(SummarizedExperiment)
+  library(Hmisc)
+  library(ggplot2)
+  library(pheatmap)
+  library(RColorBrewer)
+  library(eulerr)
+  library(UpSetR)
+  library(grid)
+  library(gridExtra)
+})
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+
+if(!file.exists( file.path(s3_dir, "SE_objects"))){
+  stop("Please go through vignette 3 & 4 to make SE objects or download from S3 bucket")
+}
+
+tcga_gdc <- get(load( file.path( s3_dir, "SE_objects","tcga_gdc_log2_TPM.RData")))
+tcga_mskcc_norm <- get(load( file.path( s3_dir, "SE_objects", "tcga_mskcc_norm_log2_TPM.RData")))
+tcga_mskcc_batch <- get(load( file.path( s3_dir, "SE_objects", "tcga_mskcc_batch_log2_TPM.RData")))
+tcga_recount2 <- get(load( file.path( s3_dir, "SE_objects", "tcga_recount2_log2_TPM.RData")))
+tcga_piccolo <- get(load( file.path( s3_dir, "SE_objects","tcga_piccolo_log2_TPM.RData")))
+
+tcga_xena <- get(load( file.path( s3_dir, "SE_objects", "xena_TPM.RData")))
+outlier = c("TCGA-A7-A26I-01B-06R-A22O-07", "TCGA-38-4625-01A-01R-1206-07",
+            "TCGA-FE-A232-01A-11R-A14Y-07")
+oidx <- match(outlier, colnames(tcga_xena))
+tcga_xena <- tcga_xena[, -oidx]
+
+gtex_v6 <- get(load( file.path( s3_dir, "SE_objects","gtex_v6_log2_TPM.RData")))
+gtex_mskcc_norm <- get(load( file.path( s3_dir, "SE_objects","gtex_mskcc_norm_log2_TPM.RData")))
+gtex_mskcc_batch <- get(load( file.path( s3_dir, "SE_objects","gtex_mskcc_batch_log2_TPM.RData")))
+gtex_recount2 <- get(load( file.path( s3_dir, "SE_objects", "gtex_recount2_log2_TPM.RData")))
+
+gtex_xena <- get(load( file.path( s3_dir, "SE_objects", "gtex_xena_TPM.RData")))
+outlier = c("GTEX-T5JW-0726-SM-4DM6D", "GTEX-U3ZN-1626-SM-4DXTZ")
+oidx <- match(outlier, colnames(gtex_xena))
+gtex_xena <- gtex_xena[, -oidx]
+
+gtex_v6_mat = assay(gtex_v6)
+mskcc_fpkm_mat=assay(gtex_mskcc_norm)
+mskcc_batch_mat=assay(gtex_mskcc_batch)
+recount2_mat=assay(gtex_recount2)
+xena_mat= assay(gtex_xena)
+
+geneName = rownames(gtex_v6)
+
+m = 5 # pairwise max of 2 vectors.
+lf = 2; fold_no = "4fold" #log2(4 +0.01) ; 
+#lf = 1; fold_no ="2fold"
+#lf=1.584; fold_no = "3fold"
+
+mismatch_genes_GTEX = sapply( 1:  nrow(gtex_v6_mat), function(idx){
+  temp_gtex=gtex_v6_mat[idx, ]
+  temp_mskcc_fpkm=mskcc_fpkm_mat[idx, ]
+  temp_recount2=recount2_mat[idx, ]
+  temp_xena=xena_mat[idx, ]
+  
+  diff_no = length(unique( c(
+    which(abs(temp_gtex- temp_xena) >= lf & pmax(temp_gtex, temp_xena) >= m   ),
+    which(abs(temp_gtex- temp_recount2) >= lf & pmax(temp_gtex, temp_recount2) >= m ),
+    which(abs(temp_gtex- temp_mskcc_fpkm) >= lf & pmax(temp_gtex, temp_mskcc_fpkm) >= m ),
+    
+    which(abs(temp_xena- temp_recount2) >=  lf & pmax(temp_recount2, temp_xena) >= m ),
+    which(abs(temp_xena- temp_mskcc_fpkm) >= lf & pmax(temp_mskcc_fpkm, temp_xena) >= m ),
+    
+    which(abs(temp_recount2- temp_mskcc_fpkm) >= lf  & pmax(temp_recount2, temp_mskcc_fpkm) >= m)
+  )))
+  diff_no
+})
+names(mismatch_genes_GTEX) = geneName
+gtex_bad_genes = names(which(mismatch_genes_GTEX >=19))
+gtex_allgenes = geneName
+
+# clear some objects and free memory 
+rm(gtex_v6)
+rm(gtex_mskcc_norm)
+rm(gtex_mskcc_batch)
+rm(gtex_recount2)
+rm(gtex_xena)
+
+rm(gtex_v6_mat)
+rm(mskcc_fpkm_mat) 
+rm(mskcc_batch_mat) 
+rm(recount2_mat)
+rm(xena_mat) 
+
+```
+
+#### Discordant Genes in TCGA
+
+```{r eval =FALSE}
+geneName = rownames(tcga_gdc)
+
+gdc_mat = assay(tcga_gdc)
+mskcc_fpkm_mat=assay(tcga_mskcc_norm)
+mskcc_batch_mat=assay(tcga_mskcc_batch)
+piccolo_mat=assay(tcga_piccolo)
+recount2_mat=assay(tcga_recount2)
+xena_mat= assay(tcga_xena)
+
+mismatch_genes_TCGA = sapply( 1:  nrow(gdc_mat), function(idx){
+  temp_gdc=gdc_mat[idx, ]
+  temp_piccolo=piccolo_mat[idx, ]
+  temp_mskcc_batch=mskcc_batch_mat[idx, ]
+  temp_mskcc_fpkm=mskcc_fpkm_mat[idx, ]
+  temp_recount2=recount2_mat[idx, ]
+  temp_xena=xena_mat[idx, ]
+  
+  diff_no = length(unique( c(
+    which(abs(temp_gdc- temp_xena) > lf & pmax(temp_gdc, temp_xena) > m   ),
+    which(abs(temp_gdc- temp_recount2) > lf & pmax(temp_gdc, temp_recount2) > m ),
+    which(abs(temp_gdc- temp_mskcc_fpkm) > lf & pmax(temp_gdc, temp_mskcc_fpkm) > m ),
+    which(abs(temp_gdc- temp_piccolo) > lf & pmax(temp_gdc, temp_piccolo) > m ),
+    
+    which(abs(temp_xena- temp_recount2) > lf & pmax(temp_recount2, temp_xena) > m ),
+    which(abs(temp_xena- temp_piccolo) > lf & pmax(temp_piccolo, temp_xena) > m ),
+    which(abs(temp_xena- temp_mskcc_fpkm) > lf & pmax(temp_mskcc_fpkm, temp_xena) > m ),
+    
+    which(abs(temp_recount2- temp_piccolo) > lf  & pmax(temp_recount2, temp_piccolo) > m),
+    which(abs(temp_recount2- temp_mskcc_fpkm) > lf  & pmax(temp_recount2, temp_mskcc_fpkm) > m),
+    
+   which(abs(temp_mskcc_fpkm- temp_piccolo) > lf & pmax(temp_mskcc_fpkm, temp_piccolo) > m)
+    
+  )))
+  diff_no
+})
+names(mismatch_genes_TCGA) = geneName
+tcga_bad_genes= names(which(mismatch_genes_TCGA > 48))
+tcga_allgenes = geneName
+
+# clear some objects and free memory 
+rm(gdc_mat)
+rm(piccolo_mat)
+rm(mskcc_batch_mat)
+rm(mskcc_fpkm_mat)
+rm(recount2_mat)
+rm(xena_mat)
+
+rm(tcga_gdc)
+rm(tcga_mskcc_norm) 
+rm(tcga_mskcc_batch) 
+rm(tcga_recount2)
+rm(tcga_xena)
+rm(tcga_piccolo)
+```
+
+#### Calculate Percentage of Discordant Genes
+
+```{r eval =FALSE}
+
+length(gtex_bad_genes) # 4889
+length(gtex_allgenes) # 16518
+(length(gtex_bad_genes)/ length(gtex_allgenes)) *100 # 29.59801
+
+
+length(tcga_bad_genes) # 5701
+length(tcga_allgenes) # 16109
+(length(tcga_bad_genes)/ 16109)*100 # 35.39015
+
+commongenes = unique( c( tcga_allgenes, gtex_allgenes))
+length(commongenes) # 16738
+
+bad_genes  = unique( c( tcga_bad_genes, gtex_bad_genes))
+length(bad_genes) # 6867
+(length(bad_genes)/16730 )* 100 # 41.04603
+
+```
+
+#### Compare with previously calculated results for TCGA
+
+```{r eval =FALSE}
+
+tcga_v1 <- read.delim(file.path(git_dir, "data/discordant/tcga_bad_genes_4fold.txt"), 
+                      header=FALSE, stringsAsFactors=FALSE)[,1]
+tcga_v2 <- tcga_bad_genes
+
+# no of bad genes in previously calculated result (using converted tpm calls)
+length(tcga_v1) # 1637
+
+# no of bad genes using original TPM calls from xena.
+length(tcga_v2) # 5701
+
+# no of bad genes shared between the two approaches.
+length( intersect( tcga_v1, tcga_v2 )) # 1612
+
+# make quick venn diagram
+library(eulerr)
+lst = list(convertedTPMapproach=tcga_v1, OriginalTPMapproach = tcga_v2)
+fit <- euler(lst, shape = "ellipse")
+v0 = plot(fit, fontsize=16, quantities = list(fontsize = 16))
+v0
+```
+
+##### Compare with previously calculated results for GTEx
+
+```{r eval =FALSE}
+gtex_v1 <- read.delim(file.path(git_dir, "/data/discordant/gtex_bad_genes_4fold.txt"), 
+                      header=FALSE, stringsAsFactors=FALSE)[,1]
+gtex_v2 <-gtex_bad_genes
+
+# no of bad genes in previously calculated result (using converted tpm calls)
+length(gtex_v1) # 1214
+
+# no of bad genes using original TPM calls from xena.
+length(gtex_v2) # 4889
+
+# no of bad genes shared between the two approaches.
+length( intersect( gtex_v1, gtex_v2 )) # 1186
+
+# make quick venn diagram
+library(eulerr)
+lst = list(convertedTPMapproach=gtex_v1, OriginalTPMapproach = gtex_v2)
+fit <- euler(lst, shape = "ellipse")
+v1 = plot(fit, fontsize=16, quantities = list(fontsize =16))
+v1
+```
+
+## Appendix : Creating TPM SE OBJECTS using approach-2
+
+### Create TPM values from FRPM values for GDC 
+
+```{r eval=FALSE}
+
+bigdir = dirname(getwd())
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData", "combined_SEobjects")
+rse <- get(load(file.path(s3_dir, "GDC_htseq_fpkm_09_28_2018.RData")))
+
+# extract the data
+test2 <- assay(rse)
+# convert to tpm
+test3 <- apply(test2, 2, function(x){
+  (x/sum(x))*1000000
+})
+# log it.
+tpm_mat = log2(test3+0.001)
+
+# add back to the SE object
+gdc_tpm <- rse
+assay(gdc_tpm) <- tpm_mat
+
+#save it.
+save(gdc_tpm, file=file.path(results_dir, 
+        "approach2_TPM_SEobjects", "GDC_TPM_11_15_2018.RData"))
+```
+
+### Create TPM values from FRPM values for  Xena Toil 
+
+```{r eval=FALSE}
+rm(list=ls())
+gc()
+library(rtracklayer)
+library(SummarizedExperiment)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data", "approach2_TPM_SEobjects")
+
+countsFile <- file.path(s3_dir, "datasource_XENA", "TcgaTargetGtex_rsem_gene_fpkm")
+expected_counts = read.delim(countsFile, header=TRUE, stringsAsFactors=FALSE,
+                               row.names=1)
+# get column information for rse object.
+phenotype = read.delim(file.path(s3_dir, "datasource_XENA",
+        "TcgaTargetGTEX_phenotype.txt"), header=TRUE, stringsAsFactors=FALSE)
+# get rowRanges for rse object.
+genes_v23 = import(file.path(s3_dir, "annotations", 
+                               "gencode.v23.annotation.gtf"))
+row_nms = intersect( rownames(expected_counts), genes_v23$gene_id)
+genes_v23 <- genes_v23[match( rownames(expected_counts), genes_v23$gene_id), ]
+mcols(genes_v23) <- mcols(genes_v23)[, c("source", "type", "gene_id", 
+       "gene_type", "gene_name", "gene_status")]
+
+
+test2 =2^expected_counts - 0.001
+# convert to tpm
+test3 <- apply(test2, 2, function(x){
+  (x/sum(x))*1000000
+})
+# log it.
+tpm_mat = log2(test3+0.001)
+
+#colnames(gtex_tpm_mat)[grep("GTEX-SUCS-0226-SM-5CHQG", colnames(gtex_tpm_mat))]
+colnames(tpm_mat) = gsub("\\.", "-", colnames(tpm_mat))
+didx <- grep("GTEX-SUCS-0226-SM-5CHQG-1", colnames(tpm_mat))
+tpm_mat <- tpm_mat[, -c(didx)]
+
+# lets do only TCGA.
+tcga_tpm_mat <- tpm_mat[, grep("^TCGA*", colnames(tpm_mat))]
+
+tcga_nms <- intersect( colnames(tcga_tpm_mat), phenotype[,1])
+phenotype_tcga = phenotype[match(tcga_nms, phenotype[,1]), ]
+tcga_tpm_mat <- tcga_tpm_mat[,match(tcga_nms, colnames(tcga_tpm_mat))]
+
+
+tcga_tpm <- SummarizedExperiment(assays=SimpleList(counts=tcga_tpm_mat),
+                              rowRanges=genes_v23, colData=phenotype_tcga)  
+save(tcga_tpm, file=file.path(results_dir , "XENA_TCGA_TPM_11_15_2018.RData"))
+
+# for gtex data
+gtex_tpm_mat <- tpm_mat[, grep("^GTEX*", colnames(tpm_mat))]
+phenotype_gtex = phenotype[match( colnames(gtex_tpm_mat), phenotype[,1]), ]
+
+gtex_tpm <- SummarizedExperiment(assays=SimpleList(counts=gtex_tpm_mat),
+                              rowRanges=genes_v23, colData=phenotype_gtex)
+
+save(gtex_tpm, file=file.path(results_dir, "XENA_GTEX_TPM_11_15_2018.RData"))
+```
+
+### Create TPM values from FRPM values for GSE62944/Piccolo 
+
+```{r eval=FALSE}
+rm(list=ls())
+gc()
+library(rtracklayer)
+library(SummarizedExperiment)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data", "approach2_TPM_SEobjects")
+
+# read in the data
+tumor_samples = read.delim(
+  file.path(s3_dir, "datasource_PICCOLO", 
+  "GSE62944_06_01_15_TCGA_24_CancerType_Samples.txt"), 
+  header=FALSE, stringsAsFactors=FALSE)
+tdata = read.delim(
+  file.path(s3_dir, "datasource_PICCOLO",
+  "GSM1536837_01_27_15_TCGA_20.Illumina.tumor_Rsubread_FPKM.txt.gz"), 
+  header=TRUE, stringsAsFactors = FALSE, row.names=1)
+
+colnames(tdata) = gsub("\\.","-", colnames(tdata))
+
+#make tpm data
+tpm_mat <- apply(tdata, 2, function(x){
+  (x/sum(x))*1000000
+})
+# log it.
+log2_tpm_mat = log2(tpm_mat+0.001)
+
+# get gene annotations.
+genes_gr = import( file.path(s3_dir, "annotations","gencode.v19.annotation.gtf"))
+genes_gr = genes_gr[which(genes_gr$type=="gene"), ]
+
+common_genes=intersect(rownames(log2_tpm_mat), genes_gr$gene_name)
+data = log2_tpm_mat[common_genes, ]
+genes_gr= genes_gr[match(common_genes, genes_gr$gene_name), ]
+
+idx = match(colnames(data), tumor_samples[,1])
+tumor_samples = tumor_samples[idx, ]
+
+# create an SE object ans save it.
+TCGA_gse62944_tumor = SummarizedExperiment(
+  assays=SimpleList(counts=data.matrix(data)),
+  rowRanges=genes_gr, colData=tumor_samples)
+
+save(TCGA_gse62944_tumor, file=file.path(results_dir,
+                 "TCGA_gse62944_tumor_11_15_2018.RData"))
+```
+
+### Create TPM values from FRPM values for  MSKCC
+
+```{r eval=FALSE}
+rm(list=ls())
+gc()
+library(rtracklayer)
+library(SummarizedExperiment)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data", "approach2_TPM_SEobjects")
+
+# read in the data
+source = file.path(s3_dir, "datasource_MSKCC", "RNAseqDB","data","unnormalized")
+files = list.files(path = source, full.names = T, pattern ="*tcga-t.txt")
+all_data = lapply(files, function(x){
+   dat = read.delim(x, header=T, stringsAsFactors=FALSE, row.names=1)
+   dat =dat[,-1]
+})
+sapply(all_data, nrow)
+sapply(all_data, ncol)
+
+# get gene Names from each source 
+genes = lapply(all_data, function(x) rownames(x))
+genes = genes[[1]]
+
+# ensure each source has same order of genes
+all_data = lapply(all_data, function(x){
+   x[genes, ]
+})
+types = gsub("-rsem-fpkm-tcga.txt.gz", "", basename(files))
+
+# combine the sample Names by region.
+pheno = mapply(function(x,y){
+   cbind(sample = colnames(y),type=rep(x,ncol(y)) )
+}, x=types, y = all_data)
+
+pheno = do.call(rbind, pheno)
+all_data = do.call(cbind, all_data)
+
+# convert to tpm
+test3 <- apply(all_data, 2, function(x){
+  (x/sum(x))*1000000
+})
+# log it.
+all_data = log2(test3+0.001)
+
+# get Ranges for genes
+genes_gr = import(file.path(s3_dir,"annotations","gencode.v19.annotation.gtf"))
+genes_gr = genes_gr[which(genes_gr$type=="gene"), ]
+genes_gr = genes_gr[ match( rownames(all_data), genes_gr$gene_name) , ]
+mcols(genes_gr) = mcols(genes_gr)[,c("gene_id", "gene_name", "gene_type")]
+rownames(pheno) = pheno[,1]
+
+# create se object and save it.
+mskcc_norm<-SummarizedExperiment(assays=SimpleList(counts=data.matrix(all_data)),
+                            rowRanges=genes_gr, colData=pheno)
+
+save(mskcc_norm, file=file.path(results_dir,
+                "TCGA_unnormalized_RNAseqDB_11_15_2018.RData"))
+```
+
+### Create TPM values from FRPM values for MSKCC Batch
+
+```{r eval=FALSE}
+rm(list=ls())
+gc()
+
+library(rtracklayer)
+library(SummarizedExperiment)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data", "approach2_TPM_SEobjects")
+
+# read in the data
+source = file.path(s3_dir, "datasource_MSKCC", "RNAseqDB","data","normalized")
+
+files = list.files(path = source, full.names = T, pattern ="*tcga-t.txt$")
+
+all_data = lapply(files, function(x){
+   dat = read.delim(x, header=T, stringsAsFactors=FALSE, row.names=1)
+   dat =dat[,-1]
+})
+sapply(all_data, nrow)
+sapply(all_data, ncol)
+
+# get gene Names from each source 
+genes = lapply(all_data, function(x) rownames(x))
+genes_df = table(unlist(genes))
+genes = names(which(genes_df==19))
+
+# ensure each source has same order of genes
+all_data = lapply(all_data, function(x){
+   x[genes, ]
+})
+types = gsub("-rsem-fpkm-tcga-t.txt", "", basename(files))
+
+# combine the sample Names by region.
+pheno = mapply(function(x,y){
+   cbind(sample = colnames(y),type=rep(x,ncol(y)) )
+}, x=types, y = all_data)
+
+pheno = do.call(rbind, pheno)
+all_data = do.call(cbind, all_data)
+
+# convert to tpm
+test3 <- apply(all_data, 2, function(x){
+  (x/sum(x))*1000000
+})
+# log it.
+all_data = log2(test3+0.001)
+
+# get Ranges for genes
+genes_gr = import(file.path(s3_dir,"annotations","gencode.v19.annotation.gtf"))
+genes_gr = genes_gr[which(genes_gr$type=="gene"), ]
+table(is.na(match( rownames(all_data), genes_gr$gene_name)))
+genes_gr = genes_gr[ match( rownames(all_data), genes_gr$gene_name) , ]
+mcols(genes_gr) = mcols(genes_gr)[,c("gene_id", "gene_name", "gene_type")]
+rownames(pheno) = pheno[,1]
+
+# create se object and save it.
+mskcc_batch<-SummarizedExperiment(assays=SimpleList(counts=data.matrix(all_data)),
+                            rowRanges=genes_gr, colData=pheno)
+save(mskcc_batch, file=file.path(results_dir,
+                    "TCGA_normalized_RNAseqDB_11_15_2018.RData"))
+```
+
+### Create TPM values from FRPM values for Recount2
+
+```{r eval=FALSE}
+rm(list=ls())
+gc()
+
+library(rtracklayer)
+library(SummarizedExperiment)
+library(recount)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data", "approach2_TPM_SEobjects")
+
+# load rsa
+rse_gene <- get(load(file.path(s3_dir, "datasource_RECOUNT2_TCGA",
+                               "rse_gene.Rdata")))
+
+# Calculate RPKM
+rpkm <- getRPKM(rse_gene, length_var = "bp_length", 
+                mapped_var = "mapped_read_count")
+
+# checking that column names and row names remain the same.
+identical( colnames(rse_gene), colnames(rpkm))
+identical( rownames(rse_gene), rownames(rpkm))
+
+# convert to tpm
+tpm_mat <- apply(rpkm, 2, function(x){
+  (x/sum(x))*1000000
+})
+# log it.
+log2_tpm_mat = log2(tpm_mat+0.001)
+
+# add tpm back to object
+assay(rse_gene) = log2_tpm_mat
+
+# coldata contains a very large DataFrame
+# we want only TCGA id, TCGA subtype and batch no 
+col_nms = c("gdc_cases.samples.portions.analytes.aliquots.submitter_id", 
+            "cgc_case_batch_number",  
+            "gdc_cases.project.project_id") 
+col_idx = match(col_nms, colnames(colData(rse_gene)))
+colData(rse_gene) = colData(rse_gene)[, col_idx]
+
+length(colData(rse_gene)[,1])  
+length(unique(colData(rse_gene)[,1]))
+
+# remove duplicate TCGA ids
+rm = which(duplicated(colData(rse_gene)[,1]))
+rse_tcga_recount2 = rse_gene[, -rm]
+
+# save se object
+save(rse_tcga_recount2, file=file.path(results_dir, 
+                 "rse_gene_tcga_recount2_11_15_2018.RData"))
+```
+
+### Create Standardised Objects for each source.
+
+```{r eval=FALSE}
+rm(list=ls())
+gc()
+suppressPackageStartupMessages({
+  library(SummarizedExperiment)
+  library(knitr)
+  library(ggplot2)
+  library(grid)
+  library(gridExtra)
+  library(Hmisc)
+  library(rtracklayer)
+  library(GenomicFeatures)
+})
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data", "approach2_TPM_SEobjects")
+annot_dir =file.path(s3_dir, "annotations")
+
+# get common genes and common samples for later subsetting.
+tcga_gdc <- get(load( file.path( s3_dir, "SE_objects","tcga_gdc_log2_TPM.RData")))
+common_genes <- rownames(tcga_gdc)
+common_samples <- colnames(tcga_gdc)
+length(common_genes)
+length(common_samples)
+rm(tcga_gdc)
+
+# load previously prepared se objects from s3 bucket!
+recount2_file= file.path(results_dir, "rse_gene_tcga_recount2_11_15_2018.RData")
+gdc_file=file.path(results_dir, "GDC_TPM_11_15_2018.RData")
+mskcc_normalized_file=file.path(results_dir, "TCGA_unnormalized_RNAseqDB_11_15_2018.RData")
+mskcc_batch_effect_file=file.path(results_dir,  "TCGA_normalized_RNAseqDB_11_15_2018.RData")
+gse62944_file= file.path(results_dir,  "TCGA_gse62944_tumor_11_15_2018.RData")
+xena_file=file.path(results_dir,"XENA_TCGA_TPM_11_15_2018.RData")
+
+gdc=get(load(gdc_file)) #gdc_tpm
+xena_tpm = get(load(xena_file)) #tcga_tpm
+rm(gdc_tpm)
+rm(tcga_tpm)
+
+TCGA_gse62944_tumor<- get(load(gse62944_file)) 
+rse_tcga_recount2 <- get(load(recount2_file))
+mskcc_norm <- get(load(mskcc_normalized_file)) 
+mskcc_batch<- get(load(mskcc_batch_effect_file))
+
+# subset to common genes
+gdc=gdc[match(common_genes, rowRanges(gdc)$external_gene_name) , ]
+TCGA_gse62944_tumor=TCGA_gse62944_tumor[ match(common_genes, 
+                                               rownames(TCGA_gse62944_tumor)), ]
+mskcc_norm=mskcc_norm[match(common_genes,rownames(mskcc_norm)), ]
+mskcc_batch=mskcc_batch[match(common_genes,rownames(mskcc_batch)), ]
+xena_tpm=xena_tpm[match(common_genes, rowRanges(xena_tpm)$gene_name),  ]
+
+# recount2 stores gene Names as character list
+test = lapply(rowRanges(rse_tcga_recount2)$symbol, function(x) x[1])
+idx = match(common_genes, unlist(test))
+rse_tcga_recount2 = rse_tcga_recount2[idx, ]
+
+# subset to common samples
+gdc = gdc[ ,match(common_samples, colnames(gdc))]
+mskcc_norm = mskcc_norm[ , match(common_samples, colnames(mskcc_norm))]
+mskcc_batch = mskcc_batch[ , match(common_samples, colnames(mskcc_batch))]
+TCGA_gse62944_tumor = TCGA_gse62944_tumor[ , match(common_samples, colnames(TCGA_gse62944_tumor))]
+rse_tcga_recount2 = rse_tcga_recount2[, match(common_samples, 
+                                              colData(rse_tcga_recount2)[,1] )]
+xena_tpm = xena_tpm[ , match(substr(common_samples,1,15),  colnames(xena_tpm))]
+
+# make sure all object have similar format for row names and column names
+colnames(rse_tcga_recount2)= colnames(gdc)
+colnames(xena_tpm)= colnames(gdc)
+rownames(gdc)=  rownames(mskcc_norm )
+rownames(rse_tcga_recount2)=  rownames(mskcc_norm )
+rownames(xena_tpm)=  rownames(mskcc_norm )
+
+# give consistent names to rse objects
+tcga_gdc=gdc
+tcga_mskcc_norm=mskcc_norm
+tcga_mskcc_batch=mskcc_batch
+tcga_recount2=rse_tcga_recount2
+tcga_xena = xena_tpm
+tcga_piccolo = TCGA_gse62944_tumor
+
+# save TPM objects.
+save(tcga_piccolo, file = file.path(results_dir,                                  "tcga_piccolo_log2_TPM.RData"))
+save(tcga_gdc, file = file.path(results_dir,
+                                "tcga_gdc_log2_TPM.RData"))
+save(tcga_mskcc_norm, file = file.path(results_dir, 
+                                       "tcga_mskcc_norm_log2_TPM.RData"))
+save(tcga_mskcc_batch, file = file.path(results_dir, 
+                                        "tcga_mskcc_batch_log2_TPM.RData"))
+save(tcga_recount2, file = file.path(results_dir, 
+                                     "tcga_recount2_log2_TPM.RData"))
+save(tcga_xena, file = file.path(results_dir,
+                                 "tcga_xena_log2_TPM.RData"))
+
+```
