@@ -1,7 +1,7 @@
 ---
 title: "Supplemental Tables"
 author: "Sonali Arora, Hamid Bolouri"
-date: "October 1, 2018"
+date: "December 6, 2018"
 output: 
   html_document:
     toc: true
@@ -26,8 +26,8 @@ suppressPackageStartupMessages({
 
 # folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
 bigdir = dirname(getwd())
-# github directory eg: ~/Downloads/UncertainityRNA
-git_dir = file.path(bigdir,  "UncertainityRNA")
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
 # S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
 s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
 
@@ -114,8 +114,8 @@ suppressPackageStartupMessages({
 
 # folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
 bigdir = dirname(getwd())
-# github directory eg: ~/Downloads/UncertainityRNA
-git_dir = file.path(bigdir,  "UncertainityRNA")
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
 # S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
 s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
 
@@ -203,8 +203,8 @@ suppressPackageStartupMessages({
 
 # folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
 bigdir = dirname(getwd())
-# github directory eg: ~/Downloads/UncertainityRNA
-git_dir = file.path(bigdir,  "UncertainityRNA")
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
 # S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
 s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
 
@@ -339,8 +339,8 @@ suppressPackageStartupMessages({
 
 # folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
 bigdir = dirname(getwd())
-# github directory eg: ~/Downloads/UncertainityRNA
-git_dir = file.path(bigdir,  "UncertainityRNA")
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
 # S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
 s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
 
