@@ -23,8 +23,8 @@ library(ggplot2)
 
 # folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
 bigdir = dirname(getwd())
-# github directory eg: ~/Downloads/UncertainityRNA
-git_dir = file.path(bigdir,  "UncertainityRNA")
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
 # S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
 s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
 
@@ -230,8 +230,8 @@ suppressPackageStartupMessages({
 
 # folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
 bigdir = dirname(getwd())
-# github directory eg: ~/Downloads/UncertainityRNA
-git_dir = file.path(bigdir,  "UncertainityRNA")
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
 # S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
 s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
 
@@ -354,8 +354,8 @@ suppressPackageStartupMessages({
 
 # folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
 bigdir = dirname(getwd())
-# github directory eg: ~/Downloads/UncertainityRNA
-git_dir = file.path(bigdir,  "UncertainityRNA")
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
 # S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
 s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
 
@@ -453,7 +453,6 @@ dev.off()
 
 ```
 
-
 ## Pairwise scatter plots for Discordant genes in GTEX samples
 
 ```{r}
@@ -467,8 +466,8 @@ suppressPackageStartupMessages({
 
 # folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
 bigdir = dirname(getwd())
-# github directory eg: ~/Downloads/UncertainityRNA
-git_dir = file.path(bigdir,  "UncertainityRNA")
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
 # S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
 s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
 
@@ -576,8 +575,8 @@ text_size =10
 
 # folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
 bigdir = dirname(getwd())
-# github directory eg: ~/Downloads/UncertainityRNA
-git_dir = file.path(bigdir,  "UncertainityRNA")
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
 # S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
 s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
 
