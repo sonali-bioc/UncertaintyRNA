@@ -1,0 +1,324 @@
+---
+title: "Fold change using abundances from different pipelines"
+author: "Sonali Arora, Hamid Bolouri"
+date: "December 7, 2018"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+## Introduction
+
+In this vignette, we want to explore if expression differences between pairs of samples 
+for any given gene vary depending on data source. More concretely, 
+if we compared the fold change in a gene of interest between two samples, 
+across various pipelines, would we see a difference. 
+
+## Calculate Fold Change Differences in TCGA Data 
+
+```{r eval=FALSE}
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(SummarizedExperiment)
+  library(Hmisc)
+  library(ggplot2)
+  library(pheatmap)
+  library(RColorBrewer)
+  library(eulerr)
+  library(UpSetR)
+  library(grid)
+  library(gridExtra)
+})
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+
+if(!file.exists( file.path(s3_dir, "SE_objects"))){
+  stop("Please go through vignette 3 & 4 to make SE objects or download from S3 bucket")
+}
+if(!file.exists( file.path( results_dir))){
+  system(paste0("mkdir ", results_dir))
+}
+if(!file.exists( file.path( results_dir,"discordant"))){
+  system(paste0("mkdir ", file.path(results_dir, "discordant")))
+}
+
+if(!file.exists( file.path( results_dir, "pdf"))){
+  system(paste0("mkdir ", file.path(results_dir, "pdf")))
+}
+
+if(!file.exists( file.path( results_dir, "tables"))){
+  system(paste0("mkdir ", file.path(results_dir, "tables")))
+}
+
+tcga_gdc <- get(load( file.path( s3_dir, "SE_objects","tcga_gdc_log2_TPM.RData")))
+tcga_mskcc_norm <- get(load( file.path( s3_dir, "SE_objects", "tcga_mskcc_norm_log2_TPM.RData")))
+tcga_recount2 <- get(load( file.path( s3_dir, "SE_objects", "tcga_recount2_log2_TPM.RData")))
+tcga_xena <- get(load( file.path( s3_dir, "SE_objects", "tcga_xena_log2_TPM.RData")))
+tcga_piccolo <- get(load( file.path( s3_dir, "SE_objects","tcga_piccolo_log2_TPM.RData")))
+
+geneName = rownames(tcga_gdc)
+
+m = 5 # pairwise max of 2 vectors.
+lf = 2; fold_no = "4fold"
+
+# read in previously calculated discordant genes and subset all se objects
+# to contain only discordant genes.
+discordant_genes = read.delim(
+  file.path(git_dir, "data", "discordant", "tcga_bad_genes_4fold.txt"),
+  header=FALSE, stringsAsFactors = FALSE)[,1]
+length(discordant_genes)
+
+geneName = rownames(tcga_gdc)
+dis_idx = match(discordant_genes, geneName)
+
+tcga_gdc = tcga_gdc[dis_idx, ]
+tcga_mskcc_norm = tcga_mskcc_norm[dis_idx, ]
+tcga_piccolo = tcga_piccolo[dis_idx, ]
+tcga_recount2 = tcga_recount2[dis_idx, ]
+tcga_xena = tcga_xena[dis_idx, ]
+
+# extract data from each se object
+gdc_mat = assay(tcga_gdc)
+mskcc_norm_mat=assay(tcga_mskcc_norm)
+piccolo_mat=assay(tcga_piccolo)
+recount2_mat=assay(tcga_recount2)
+xena_mat= assay(tcga_xena)
+
+# quick calculation : find union of discordant samples per gene
+diffsamples_TCGA = sapply(1:nrow(gdc_mat), function(idx){
+  temp_gdc = gdc_mat[idx, ]
+  temp_piccolo = piccolo_mat[idx, ]
+  temp_mskcc_norm= mskcc_norm_mat[idx, ]
+  temp_recount2 = recount2_mat[idx, ]
+  temp_xena = xena_mat[idx, ]
+  
+  diffsamples = unique(c(
+    (which(abs(temp_gdc- temp_xena) > lf & pmax(temp_gdc, temp_xena) > m)),
+    (which(abs(temp_gdc- temp_recount2) > lf & pmax(temp_gdc, temp_recount2) > m)),
+    (which(abs(temp_gdc- temp_mskcc_norm) > lf & pmax(temp_gdc, temp_mskcc_norm) > m)),
+    (which(abs(temp_gdc- temp_piccolo) > lf & pmax(temp_gdc, temp_piccolo) > m)),
+    (which(abs(temp_xena- temp_recount2) > lf & pmax(temp_recount2, temp_xena) > m)),
+    (which(abs(temp_xena- temp_piccolo) > lf & pmax(temp_piccolo, temp_xena) > m)),
+    (which(abs(temp_xena- temp_mskcc_norm) > lf & pmax(temp_mskcc_norm, temp_xena) > m)),
+    (which(abs(temp_recount2- temp_piccolo) > lf  & pmax(temp_recount2, temp_piccolo) > m)),
+    (which(abs(temp_recount2- temp_mskcc_norm) > lf  & pmax(temp_recount2, temp_mskcc_norm) > m)),
+    (which(abs(temp_mskcc_norm- temp_piccolo) > lf & pmax(temp_mskcc_norm, temp_piccolo) > m))
+  ))
+})
+
+# note : 
+# for some genes, all 4800 samples are discordant across pipelines.
+# save these to make pairwise scatter plots ( supp figures)
+super_bad <- which(sapply(diffsamples_TCGA, length)==4800)
+badGenes <-  discordant_genes[super_bad]
+write.table(badGenes, file.path(results_dir, "discordant",
+            "TCGA_bad_genes_samples_varying_fc_across_pipelines.txt"),
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+
+thresh <- 0
+selGenes <- rownames(tcga_gdc)
+result <- lapply( selGenes, function(i){
+  gene_name = i
+  idx = grep(paste0("^",gene_name,"$"), discordant_genes)
+  samples =diffsamples_TCGA[[idx]]
+  
+  message(i, ":", length(samples))
+  
+  temp_gdc = gdc_mat[idx, samples]
+  temp_piccolo = piccolo_mat[idx, samples]
+  temp_mskcc_norm = mskcc_norm_mat[idx, samples ]
+  temp_recount2 = recount2_mat[idx, samples]
+  temp_xena = xena_mat[idx, samples]
+  
+  temp <- cbind( temp_gdc,temp_piccolo , temp_mskcc_norm, temp_recount2, 
+                 temp_xena )
+  temp[which(temp < thresh)] <- NA
+  
+  gdc_ap1 <- as.vector(dist(temp[,1], method = "manhattan"))
+  pic_ap1 <- as.vector(dist(temp[,2], method = "manhattan"))
+  mskcc_ap1 <- as.vector(dist(temp[,3], method = "manhattan"))
+  rec_ap1 <- as.vector(dist(temp[,4], method = "manhattan"))
+  xena_ap1 <- as.vector(dist(temp[,5], method = "manhattan"))
+  
+  gene_mat <- cbind(gdc_ap1, pic_ap1, mskcc_ap1, rec_ap1, xena_ap1)
+  colnames(gene_mat) = c("GDC", "Piccolo", "MSKCC", "Recount2", "Xena/Toil")
+  
+  #in some cases all pipelines report expression levels less than thresh
+  rm_idx <- which(apply(gene_mat, 1 , function(x) all(is.na(x)) ))
+  if(length(rm_idx)!=0){
+    gene_mat <- gene_mat[ -rm_idx, ]
+  }
+  
+  gene_max <- apply(gene_mat, 1, function(x) max(x, na.rm = TRUE))
+  gene_min <- apply(gene_mat, 1,  function(x) min(x, na.rm = TRUE))
+  max_min <- gene_max - gene_min
+  
+  ans1 <- max(max_min)
+  
+  ans2 <- min(apply(gene_mat,1,  function(x){
+   x = na.omit(x) # removes all NA values.
+   if(length(x)==1){
+     ans <- x
+   }else{
+     min(sort(abs(diff(x))))
+   }
+  }))
+  
+  c(ans1, ans2)
+})
+
+result2 <- do.call( rbind, result)
+rownames(result2) <- selGenes
+result2 <- result2[order(result2[,1], decreasing = TRUE), ]
+colnames(result2) <- c("max", "min")
+result2 <- data.frame(cbind(gene= rownames(result2), result2))
+
+write.table(result2, 
+            file.path(results_dir, "discordant",  "TCGA_fc_table_all_samples.txt"),
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+```
+
+## Calculate Fold Change Differences in GTEx Data
+
+```{r eval=FALSE}
+rm(list=ls())
+library(SummarizedExperiment)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data
+results_dir = file.path(bigdir, "data")
+
+gtex_v6 <- get(load( file.path( s3_dir, "SE_objects","gtex_v6_log2_TPM.RData")))
+gtex_mskcc_norm <- get(load( file.path( s3_dir, "SE_objects","gtex_mskcc_norm_log2_TPM.RData")))
+gtex_recount2 <- get(load( file.path( s3_dir, "SE_objects", "gtex_recount2_log2_TPM.RData")))
+gtex_xena <- get(load( file.path( s3_dir, "SE_objects","gtex_xena_log2_TPM.RData")))
+
+discordant_genes = read.delim(
+      file.path(git_dir, "data", "discordant", "gtex_bad_genes_4fold.txt"),
+      header=FALSE, stringsAsFactors = FALSE)[,1]
+length(discordant_genes)
+geneName = rownames(gtex_v6)
+dis_idx = match(discordant_genes, geneName)
+
+gtex_v6 = gtex_v6[dis_idx, ]
+gtex_mskcc_norm = gtex_mskcc_norm[dis_idx, ]
+gtex_recount2 = gtex_recount2[dis_idx, ]
+gtex_xena = gtex_xena[dis_idx, ]
+
+gtex_v6_mat = assay(gtex_v6)
+mskcc_norm_mat=assay(gtex_mskcc_norm)
+recount2_mat=assay(gtex_recount2)
+xena_mat= assay(gtex_xena)
+
+m = 5 # pairwise max of 2 vectors.
+lf = 2; fold_no = "4fold"
+
+# quick calculation : find union of discordant samples per gene
+diffsamples_GTEX = sapply(1:nrow(gtex_v6), function(idx){
+  temp_gtex=gtex_v6_mat[idx, ]
+  temp_mskcc_norm=mskcc_norm_mat[idx, ]
+  temp_recount2=recount2_mat[idx, ]
+  temp_xena=xena_mat[idx, ]
+  
+  diffsamples = unique(c(
+    (which(abs(temp_gtex- temp_xena) > lf & pmax(temp_gtex, temp_xena) > m)),
+    (which(abs(temp_gtex- temp_recount2) > lf & pmax(temp_gtex, temp_recount2) > m)),
+    (which(abs(temp_gtex- temp_mskcc_norm) > lf & pmax(temp_gtex, temp_mskcc_norm) > m)),
+    
+    (which(abs(temp_xena- temp_recount2) > lf & pmax(temp_recount2, temp_xena) > m)),
+    (which(abs(temp_xena- temp_mskcc_norm) > lf & pmax(temp_mskcc_norm, temp_xena) > m)),
+    (which(abs(temp_recount2- temp_mskcc_norm) > lf  & pmax(temp_recount2, temp_mskcc_norm) > m))
+  ))
+})
+
+# note : 
+# for some genes, all 1890 samples are discordant.
+# save these to make pairwise scatter plots ( supp figures)
+super_bad <- which(sapply(diffsamples_GTEX, length)==1890)
+badGenes <-  discordant_genes[super_bad]
+write.table(badGenes, file.path(results_dir, "discordant",  
+            "GTEX_bad_genes_samples_varying_fc_across_pipelines.txt"),
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+
+thresh <- 0
+selGenes <- rownames(gtex_v6_mat)
+result <- lapply( selGenes, function(i){
+  gene_name = i
+  idx = grep(paste0("^",gene_name,"$"), selGenes)
+  samples =diffsamples_GTEX[[idx]]
+  gene_mat = matrix( nrow = length(samples)-1, ncol=4 )
+  
+  message(i, ":", length(samples))
+  
+  temp_gtex=gtex_v6_mat[idx, samples]
+  temp_mskcc_norm=mskcc_norm_mat[idx, samples ]
+  temp_recount2=recount2_mat[idx, samples]
+  temp_xena=xena_mat[idx, samples]
+  
+  temp <- cbind( temp_gtex, temp_mskcc_norm, temp_recount2, temp_xena)
+  temp[which(temp < thresh)] <- NA
+  
+  gtex_ap1 <- as.vector(dist(temp[,1], method = "manhattan"))
+  mskcc_ap1 <- as.vector(dist(temp[,2], method = "manhattan"))
+  rec_ap1 <- as.vector(dist(temp[,3], method = "manhattan"))
+  xena_ap1 <- as.vector(dist(temp[,4], method = "manhattan"))
+  
+  gene_mat <- cbind(gtex_ap1, mskcc_ap1, rec_ap1, xena_ap1)
+  colnames(gene_mat) = c("GTEX", "MSKCC", "Recount2", "Xena/Toil")
+  
+  # in some cases all pipelines have expression values less than thresh
+  rm_idx <- which(apply(gene_mat, 1 , function(x) all(is.na(x)) ))
+  if(length(rm_idx)!=0){
+    gene_mat <- gene_mat[ -rm_idx, ]
+  }
+  
+  gene_max <- apply(gene_mat, 1, function(x) max(x, na.rm = TRUE))
+  gene_min <- apply(gene_mat, 1,  function(x) min(x, na.rm = TRUE))
+  max_min <- gene_max - gene_min
+  
+  ans1 <- max(max_min)
+  
+  # min apprach 
+  ans2 <- min(apply(gene_mat,1,  function(x){
+   x = na.omit(x) # removes all NA values.
+   if(length(x)==1){
+     ans <- x
+   }else{
+     min(abs(diff(sort(x))))
+   }
+  }))
+  c(ans1, ans2) 
+})
+
+result2 <- do.call( rbind, result)
+rownames(result2) <- selGenes
+result2 <- result2[order(result2[,1], decreasing = TRUE), ]
+colnames(result2) <- c("max", "min")
+result2 <- data.frame(cbind(gene= rownames(result2), result2))
+
+write.table(result2, 
+            file.path(results_dir, "discordant", "GTEX_fc_table_all_samples.txt"),
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+```
