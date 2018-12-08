@@ -32,8 +32,7 @@ present in the online version of this paper.
   + [Nucelic acid batches Part 2](https://github.com/sonali-bioc/UncertaintyRNA/blob/master/data/pdf/Supp_GTEx_nucleic_acid_batches_part2.pdf)   
   + [Nucelic acid batches Part 3](https://github.com/sonali-bioc/UncertaintyRNA/blob/master/data/pdf/Supp_GTEx_nucleic_acid_batches_part3.pdf)   
   + [Nucelic acid batches Part 4](https://github.com/sonali-bioc/UncertaintyRNA/blob/master/data/pdf/Supp_GTEx_nucleic_acid_batches_part4.pdf)   
-  + [Nucelic acid batches Part 5](https://github.com/sonali-bioc/UncertaintyRNA/blob/master/data/pdf/Supp_GTEx_nucleic_acid_batches_part5.pdf)   
-  + [Nucelic acid batches Part 6](https://github.com/sonali-bioc/UncertaintyRNA/blob/master/data/pdf/Supp_GTEx_nucleic_acid_batches_part6.pdf)   
+  + [Nucelic acid batches Part 5](https://github.com/sonali-bioc/UncertaintyRNA/blob/master/data/pdf/Supp_GTEx_nucleic_acid_batches_part5.pdf) 
 
 
 ## Downloading Data 
