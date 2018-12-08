@@ -1,7 +1,7 @@
 ---
 title: "Pipeline differences across various sources of Data"
 author: "Sonali Arora, Hamid Bolouri"
-date: "October 1, 2018"
+date: "December 7, 2018"
 output: 
   html_document:
     toc: true
@@ -23,12 +23,13 @@ suppressPackageStartupMessages({
   library(RColorBrewer)
   library(eulerr)
   library(UpSetR)
+  library(dendextend)
 })
 
 # folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
 bigdir = dirname(getwd())
-# github directory eg: ~/Downloads/UncertainityRNA
-git_dir = file.path(bigdir,  "UncertainityRNA")
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
 # S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
 s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
 
@@ -57,7 +58,7 @@ draw_colnames_45 <- function (coln, gaps, ...) {
   x     <- coord$coord - 0.5 * coord$size
   res   <- grid::textGrob(
     coln, x = x, y = unit(1, "npc") - unit(3,"bigpts"),
-    vjust = 0.75, hjust = 1, rot = 45, gp = grid::gpar(...)
+    vjust = 0.75, hjust = 1, rot = 55, gp = grid::gpar(...)
   )
   return(res)
 }
@@ -80,18 +81,20 @@ u2af1_lst <- get(load( file.path( git_dir, "data", "discordant",
 ## Heatmaps for Discordant Samples per gene
 
 ```{r heatmap}
-
+# fix names for display.
 colnames(tcga_tbl) = c(
-  "GDC-Xena", "GDC-Recount2", "GDC-MSKCC", "GDC-Piccolo"  ,
-  "Xena-Recount2", "Xena-Piccolo", "Xena-MSKCC", "Recount2-Piccolo",
+  "GDC-Xena/Toil", "GDC-Recount2", "GDC-MSKCC", "GDC-Piccolo"  ,
+  "Xena-Recount2", "Xena/Toil-Piccolo", "Xena/Toil-MSKCC", "Recount2-Piccolo",
   "Recount2-MSKCC", "MSKCC-Piccolo") 
-colnames(gtex_tbl)=c(
-  "GTEx-Xena", "GTEx-Recount2", "GTEx-MSKCC", "Xena-Recount2",
-  "Xena-MSKCC", "Recount2-MSKCC")
+
+# note - we are re-ordering the leaves of the dendrogram to ensure 
+# that text doesnt get cutoff.
+hc <- hclust(dist(t(tcga_tbl)), method="ward.D2")
+tcga_cluster_cols <- as.hclust (rotate(as.dendrogram(hc), c(3,4,2,1,5:10)) )
 
 myBreaks <- c(0, 1, 50, 100, 500, 1000, 2000, 3000, 4000, 5000)
 mycolors <- c( "white",brewer.pal(n=8, name="YlOrRd"))
-tcga_heat <- pheatmap(tcga_tbl, scale='none', cluster_cols=TRUE,
+tcga_heat <- pheatmap(tcga_tbl, scale='none', cluster_cols=tcga_cluster_cols,
        cluster_rows=TRUE, show_rownames=FALSE,
        color= mycolors,
        clustering_method="ward.D2", breaks=myBreaks,
@@ -99,9 +102,20 @@ tcga_heat <- pheatmap(tcga_tbl, scale='none', cluster_cols=TRUE,
        fontsize = 25, border_color= "black",
        fontsize_col  = 25) # YlGnBu
 
+
+# fix names for display.
+colnames(gtex_tbl)=c(
+ "GTEx-Xena/Toil", "GTEx-Recount2", "GTEx-MSKCC", "Xena/Toil-Recount2",
+ "Xena/Toil-MSKCC", "Recount2-MSKCC")
+
+# note - we are re-ordering the leaves of the dendrogram to ensure 
+# that text doesnt get cutoff.
+hc <- hclust(dist(t(gtex_tbl)), method="ward.D2")
+gtex_cluster_cols <- as.hclust (rotate(as.dendrogram(hc), c( 6,5,4,3, 1:2)) )
+
 myBreaks2 <- c(0, 1, 50, 100, 500, 1000, 2000)
 mycolors2 <- c( "white",brewer.pal(n=8, name="YlGnBu"))
-gtex_heat <- pheatmap(gtex_tbl, scale='none', cluster_cols=TRUE,
+gtex_heat <- pheatmap(gtex_tbl, scale='none', cluster_cols=gtex_cluster_cols,
                cluster_rows=TRUE, show_rownames=FALSE,
                color=mycolors2,
                clustering_method="ward.D2", breaks=myBreaks2,
@@ -109,18 +123,16 @@ gtex_heat <- pheatmap(gtex_tbl, scale='none', cluster_cols=TRUE,
                fontsize = 25,
                fontsize_col  = 25)
 
-
 ```
 
 ## Pairwise Gene Plots for U2AF1
-```{r u2af1-tcga}
 
+```{r u2af1-tcga}
 temp_gdc = u2af1_lst$temp_gdc
 temp_piccolo = u2af1_lst$temp_piccolo
 temp_mskcc_norm = u2af1_lst$temp_mskcc_norm
 temp_recount2 = u2af1_lst$temp_recount2
 temp_xena = u2af1_lst$temp_xena
-
 
 m = 5 # pairwise max of 2 vectors.
 lf = 2 # pairwise logfold change difference between 2 vectors
@@ -144,16 +156,17 @@ myFun  = function(x1, y1, plot_title){
   p0
 }
 
-p1 = myFun(x=temp_xena, y=temp_recount2, plot_title = "Recount2 \nvs Xena")
-p1 <- p1 + ylab("U2AF1(log2(TPM+0.001))") + scale_x_continuous(breaks=seq(1,8,2))
+p1 = myFun(x=temp_gdc, y=temp_recount2, plot_title = "Recount2 \nvs GDC")
+p1 <- p1 + ylab("U2AF1(log2(TPM+0.001))") 
 
+p2 = myFun(x=temp_xena, y=temp_recount2, plot_title = "Recount2 vs\nXena/Toil")
+p2 <- p2 + scale_x_continuous(breaks=seq(1,8,2))
 
-p2 = myFun(x=temp_gdc, y=temp_recount2, plot_title = "Recount2 \nvs GDC")
 p3 = myFun(x=temp_gdc, y=temp_mskcc_norm, plot_title = "MSKCC \nvs GDC")
-p4 = myFun(x=temp_gdc, y=temp_xena, plot_title = "Xena vs\n GDC")
+p4 = myFun(x=temp_gdc, y=temp_xena, plot_title = "Xena/Toil\nvs GDC")
 
   
-p5 = myFun(x=temp_xena, y=temp_mskcc_norm, plot_title = "MSKCC \nvs Xena")
+p5 = myFun(x=temp_xena, y=temp_mskcc_norm, plot_title = "MSKCC vs\nXena/Toil")
 p5= p5 +  scale_x_continuous(breaks=seq(2,8,2))
 
 p6 = myFun(x=temp_recount2, y=temp_mskcc_norm, plot_title = "MSKCC vs\n Recount2")
@@ -164,7 +177,7 @@ p8= p8 +  scale_x_continuous(breaks=seq(4,8,2))
 
 p9 = myFun(x=temp_recount2, y=temp_piccolo, plot_title = "Piccolo vs\nRecount2")
 
-p10 = myFun(x=temp_xena, y=temp_piccolo, plot_title = "Piccolo vs\n Xena")
+p10 = myFun(x=temp_xena, y=temp_piccolo, plot_title = "Piccolo vs\n Xena/Toil")
 p10= p10 +  scale_x_continuous(breaks=seq(2,8,2))
 ```
 
@@ -195,7 +208,7 @@ v1 = plot(fit1,
           fills= c("#A3A500", "darkblue", "grey45", "orange", "#E76BF3" ),
           edges = FALSE, fontsize = 40, quantities = tcga_quant,
           legend =list(labels =c("A"="GDC", "B"="MSKCC", "C"="Recount2",
-                                 "D"="Xena", "E"="Piccolo"), fontsize= 25),
+                                 "D"="Xena/Toil", "E"="Piccolo"), fontsize= 25),
           main = "Genes Different across TCGA")
 
 # gtex venn diagram
@@ -206,7 +219,7 @@ v2 = plot(fit2,
           fills= c("#A3A500", "darkblue", "grey45", "orange"  ),
           edges = FALSE, fontsize = 40, quantities = gtex_quant,
           legend =list(labels =c("A"="GTEx", "B"="MSKCC", "C"="Recount2",
-                                 "D"="Xena" ), fontsize= 25),
+                                 "D"="Xena/Toil" ), fontsize= 25),
           main = "Genes Different across GTEX")
 
 
@@ -219,7 +232,7 @@ tcga_diff_mat[match( tcga_lst[["recount2_genes"]] ,rownames(tcga_diff_mat)), 3] 
 tcga_diff_mat[match( tcga_lst[["xena_genes"]] ,rownames(tcga_diff_mat)), 4] = 1
 tcga_diff_mat[match( tcga_lst[["piccolo_genes"]] ,rownames(tcga_diff_mat)), 5] = 1
 tcga_diff_mat[is.na(tcga_diff_mat)] = 0
-colnames(tcga_diff_mat)= c("GDC", "MSKCC", "Recount2", "Xena", "Piccolo")
+colnames(tcga_diff_mat)= c("GDC", "MSKCC", "Recount2", "Xena/Toil", "Piccolo")
 tcga_diff_mat = data.frame(geneName = diff_genes, tcga_diff_mat)
 rownames(tcga_diff_mat) = NULL
 
@@ -231,23 +244,68 @@ gtex_diff_mat[match( gtex_lst[["norm_genes"]] ,rownames(gtex_diff_mat)), 2] = 1
 gtex_diff_mat[match( gtex_lst[["recount2_genes"]] ,rownames(gtex_diff_mat)), 3] = 1
 gtex_diff_mat[match( gtex_lst[["xena_genes"]] ,rownames(gtex_diff_mat)), 4] = 1
 gtex_diff_mat[is.na(gtex_diff_mat)] = 0
-colnames(gtex_diff_mat)= c("GTEx", "MSKCC", "Recount2", "XENA")
+colnames(gtex_diff_mat)= c("GTEx", "MSKCC", "Recount2", "Xena/Toil")
 gtex_diff_mat = data.frame(geneName = diff_genes, gtex_diff_mat)
 rownames(gtex_diff_mat) = NULL
 
 ```
 
+## Fold change differences
+
+```{r}
+
+tcga_mat <- read.delim(file.path(results_dir, "discordant",
+    "TCGA_fc_table_all_samples.txt"), header=T, 
+    stringsAsFactors=FALSE, row.names=1)
+
+gtex_mat = read.delim(file.path(results_dir, "discordant",
+    "GTEX_fc_table_all_samples.txt"), 
+    header=TRUE, stringsAsFactors = FALSE, row.names = 1)
+
+colnames(tcga_mat) =c("Max log2(FC)", c("Min log2(FC)"))
+colnames(gtex_mat) =c("Max log2(FC)", c("Min log2(FC)"))
+
+tcga_mat <- tcga_mat[is.finite(rowSums(tcga_mat)),]
+gtex_mat <- gtex_mat[is.finite(rowSums(gtex_mat)),]
+
+library(reshape)
+tcga_melt <- melt(tcga_mat)
+gtex_melt <- melt(gtex_mat)
+
+all_mat <- rbind( cbind(tcga_melt, DataSource=rep("TCGA", nrow(tcga_melt)) ), 
+                  cbind(gtex_melt, DataSource=rep("GTEX", nrow(gtex_melt)) ))
+
+fold_fig <- ggplot(all_mat, aes(variable, y=value, fill = variable)) +
+  geom_boxplot(outlier.shape = NA) + 
+  facet_grid(. ~ DataSource) + 
+  ylab("Differences in absolute\n log2(fold change)") + 
+  xlab(" ") + ggtitle("")  + 
+  geom_jitter( alpha=0.35, width =0.25) +
+  theme_bw(base_family="Helvetica") + 
+  theme(plot.title = element_text(lineheight=.8, size=plot_title_size),
+        axis.text=element_text(size=axis_text_size, colour="black"),
+        #axis.text.x = element_text(angle =55, hjust = 1),
+        axis.title = element_text(size=axis_text_size), 
+        legend.position="none", 
+        strip.text.x = element_text(size=axis_text_size),
+        strip.background = element_rect(colour="black", fill="white", 
+                                        size=1.5, linetype="solid"))
+
+```
+
 ## Arrange and make final Figure
-```{r final-fig2}
-gs = list( tcga_heat[[4]],
-           gtex_heat[[4]],
-          p1, p2, p3, p4, p5, p6, p7, p8, p9 , p10)
 
-lay <- rbind(c( NA, NA, NA, NA,NA, 1, 1, 1,1,1),
-             c( NA, NA, NA, NA,NA, 2, 2, 2,2,2),
-             c(3,4,5,6,7,8,9,10,11,12))
+```{r}
+gs = list( fold_fig,
+           tcga_heat[[4]],gtex_heat[[4]],
+           p1, p2, p3, p4, p5, p6, p7, p8, p9 , p10)
 
-pdf(file.path( results_dir, "pdf", "Fig2.pdf"), width =24, height=17)
+lay <- rbind(c( NA,NA,NA,NA,NA, 1, 1, 1,1,1),
+             c(2,2,2,2,2,  3,3,3,3,3),
+             c(4,5,6,7,8,  9,10,11,12,13))
+
+pdf(file.path( results_dir, "pdf", "Fig2_V2.pdf"), width =26, height=17)
+
 grid.arrange(grobs = gs, layout_matrix = lay,
              heights=unit(c(6, 6, 4), c("in", "in", "in")))
 
@@ -280,6 +338,5 @@ upset(gtex_diff_mat, nsets=4, order.by = "freq",
         "MSKCC Norm"="darkblue"
       ))
 dev.off()
-
 ```
 
