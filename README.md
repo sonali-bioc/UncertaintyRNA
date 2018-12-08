@@ -19,8 +19,8 @@ found [here](https://www.biorxiv.org/content/early/2018/10/17/445601).
 This github includes a large number of additional supplementary figures, not 
 present in the online version of this paper.  
 
-* Additional Fig1 : [Discordant Genes in TCGA](https://github.com/sonali-bioc/UncertaintyRNA/blob/master/data/pdf/Supp_Fig_TCGA_discordant_genes_examples.pdf)   
-* Additional Fig2 : [Discordant Genes in GTEx](https://github.com/sonali-bioc/UncertaintyRNA/blob/master/data/pdf/Supp_Fig_GTEX_discordant_genes_examples.pdf)    
+* Additional Fig1 : [Example of a few discordant Genes in TCGA](https://github.com/sonali-bioc/UncertaintyRNA/blob/master/data/pdf/Supp_Fig_TCGA_discordant_genes_examples.pdf)   
+* Additional Fig2 : [Example of a few discordant Genes in GTEx](https://github.com/sonali-bioc/UncertaintyRNA/blob/master/data/pdf/Supp_Fig_GTEX_discordant_genes_examples.pdf)    
 * Additional Fig 3. TCGA batch effects  
   + [By PlateID](https://github.com/sonali-bioc/UncertaintyRNA/blob/master/data/pdf/Supp_PCA_PlateID_batch_Binder.pdf)  
   + [By TSS ID](https://github.com/sonali-bioc/UncertaintyRNA/blob/master/data/pdf/Supp_TCGA_PCA_TSS_batch_Binder.pdf)
