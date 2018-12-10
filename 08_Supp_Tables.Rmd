@@ -187,6 +187,18 @@ write.table(mat, file.path(results_dir, "tables",
 
 ## Protein-mRNA correlations
 
+We downloaded the PANCAN12 data from [here](https://xenabrowser.net/datapages/?dataset=TCGA.PANCAN12.sampleMap/RPPA_RBN&host=https://tcga.xenahubs.net). We also downloaded the mapping data which contained the mapping between 
+protein names and geneNames.
+
+The dataset contains protein level from only 12 cancers and 134 proteins.
+
+These 134 proteins code for about 102 unique genes, out of which we have the 
+gene expression from 87 genes. 
+
+Before calculating correlations, we also made sure that we were calculating 
+correlations using the same samples ie, correlations were calculated only on those
+samples for whom we had both protein and mrna level data. 
+
 ```{r}
 rm(list=ls())
 
