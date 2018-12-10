@@ -10,7 +10,7 @@ output:
 
 ## Introduction
 
-In this vignette, we want to explore if expression differences between pairs of samples 
+In this vignette, we want to explore if expression fold-change differences between pairs of samples 
 for any given gene vary depending on data source. More concretely, 
 if we compared the fold change in a gene of interest between two samples, 
 across various pipelines, would we see a difference. 
