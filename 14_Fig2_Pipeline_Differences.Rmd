@@ -254,11 +254,11 @@ rownames(gtex_diff_mat) = NULL
 
 ```{r}
 
-tcga_mat <- read.delim(file.path(results_dir, "discordant",
+tcga_mat <- read.delim(file.path(git_dir, "discordant",
     "TCGA_fc_table_all_samples.txt"), header=T, 
     stringsAsFactors=FALSE, row.names=1)
 
-gtex_mat = read.delim(file.path(results_dir, "discordant",
+gtex_mat = read.delim(file.path(git_dir, "discordant",
     "GTEX_fc_table_all_samples.txt"), 
     header=TRUE, stringsAsFactors = FALSE, row.names = 1)
 
