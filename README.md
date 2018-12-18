@@ -12,7 +12,7 @@ output:
 
 This github repository contains code to reproduce the analysis in our paper 
 "Uncertainty in RNA-seq gene expression data". A copy of the paper can be 
-found [here](https://www.biorxiv.org/content/early/2018/10/17/445601). 
+found [here](https://www.biorxiv.org/content/early/2018/12/18/445601). 
 
 ### Additional Figures
 
