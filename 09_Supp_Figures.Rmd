@@ -264,8 +264,8 @@ xena_mat= assay(tcga_xena)
 m = 5 # pairwise max of 2 vectors.
 lf = 2 # pairwise logfold change difference between 2 vectors
 
-plot_title_size =20
-axis_text_size = 20
+plot_title_size =25
+axis_text_size = 25
 
 myFun  = function(x1, y1, plot_title){
   df = data.frame(cbind( x=x1, y=y1))
@@ -306,7 +306,7 @@ plots <- lapply( selGenes, function(gene){
   }
   
   p1 = myFun(x=temp_gdc, y=temp_xena, plot_title = "Xena/Toil vs\n GDC")
-  p1 = p1 + ylab(paste0(gene, " (log2(TPM+0.001))")) 
+  p1 = p1 + ylab(paste0(gene, "\n(log2(TPM+0.001))")) 
   
   p2 = myFun(x=temp_gdc, y=temp_recount2, plot_title = "Recount2 vs\n GDC")
   p3 = myFun(x=temp_gdc, y=temp_mskcc_norm, plot_title = "MSKCC \nvs GDC")
@@ -314,7 +314,7 @@ plots <- lapply( selGenes, function(gene){
   p5 = myFun(x=temp_xena, y=temp_recount2, plot_title = "Recount2 vs\n Xena/Toil")
   
   p6 = myFun(x=temp_xena, y=temp_piccolo, plot_title = "Piccolo vs\n Xena/Toil")
-  p6 = p6 + ylab(paste0(gene, " (log2(TPM+0.001))"))
+  p6 = p6 + ylab(paste0(gene, "\n(log2(TPM+0.001))"))
   
   p7 = myFun(x=temp_xena, y=temp_mskcc_norm, plot_title = "MSKCC \nvs Xena/Toil")
   p8 = myFun(x=temp_recount2, y=temp_piccolo, plot_title = "Piccolo vs\n Recount2")
@@ -415,8 +415,7 @@ myFun  = function(x1, y1, plot_title){
   p0
 }
 
-pdf(file.path(results_dir, "pdf", "Supp_Fig_TCGA_discordant_genes_examples.pdf"),
-   width = 12, height = 7)
+
 plots <- lapply( selGenes, function(gene){
   idx = grep(paste0("^",gene,"$"), rownames(gdc_mat))
   temp_gdc=gdc_mat[idx, ]
@@ -426,7 +425,7 @@ plots <- lapply( selGenes, function(gene){
   temp_xena=xena_mat[idx, ]
   
   p1 = myFun(x=temp_gdc, y=temp_xena, plot_title = "Xena/Toil vs\n GDC")
-  p1 = p1 + ylab(paste0(gene, " (log2(TPM+0.001))")) 
+  p1 = p1 + ylab(paste0(gene, "\n(log2(TPM+0.001))")) 
   
   p2 = myFun(x=temp_gdc, y=temp_recount2, plot_title = "Recount2 vs\n GDC")
   p3 = myFun(x=temp_gdc, y=temp_mskcc_norm, plot_title = "MSKCC \nvs GDC")
@@ -434,7 +433,7 @@ plots <- lapply( selGenes, function(gene){
   p5 = myFun(x=temp_xena, y=temp_recount2, plot_title = "Recount2 vs\n Xena/Toil")
   
   p6 = myFun(x=temp_xena, y=temp_piccolo, plot_title = "Piccolo vs\n Xena/Toil")
-  p6 = p6 + ylab(paste0(gene, " (log2(TPM+0.001))"))
+  p6 = p6 + ylab(paste0(gene, "\n(log2(TPM+0.001))"))
   
   p7 = myFun(x=temp_xena, y=temp_mskcc_norm, plot_title = "MSKCC \nvs Xena/Toil")
   p8 = myFun(x=temp_recount2, y=temp_piccolo, plot_title = "Piccolo vs\n Recount2")
@@ -446,9 +445,12 @@ plots <- lapply( selGenes, function(gene){
   layout = rbind( c(1,2,3,4,5), c(6,7,8,9,10))
   ml <- marrangeGrob(allplots, layout_matrix = layout,
                      top= textGrob(""))
+  pdf(file.path(results_dir, "pdf", "discordant_genes_TCGA", paste0("discordant_",gene,"_TCGA.pdf")),
+   width = 12, height = 7)
   print(ml)
+  dev.off()
 })
-dev.off()
+
 
 
 ```
@@ -516,8 +518,7 @@ myFun  = function(x1, y1, plot_title){
   p0
 }
 
-pdf(file.path(results_dir, "pdf",
-  "Supp_Fig_GTEX_discordant_genes_examples.pdf"), width = 12, height = 7)
+
 plots <- lapply( selGenes, function(gene){
   idx = grep(paste0("^",gene,"$"), rownames(gtex_v6_mat))
   temp_gtex=gtex_v6_mat[idx, ]
@@ -526,7 +527,7 @@ plots <- lapply( selGenes, function(gene){
   temp_xena=xena_mat[idx, ]
   
   p1 = myFun(x=temp_gtex, y=temp_xena, plot_title = "Xena/Toil vs\n GTEX")
-  p1 = p1 + ylab(paste0(gene, " (log2(TPM+0.001))")) 
+  p1 = p1 + ylab(paste0(gene, "\n(log2(TPM+0.001))")) 
   
   p2 = myFun(x=temp_gtex, y=temp_recount2, plot_title = "Recount2 vs\n GTEX")
   
@@ -537,16 +538,19 @@ plots <- lapply( selGenes, function(gene){
   p7 = myFun(x=temp_xena, y=temp_mskcc_norm, plot_title = "MSKCC \nvs Xena/Toil")
   
   p9 = myFun(x=temp_recount2, y=temp_mskcc_norm, plot_title = "MSKCC \nvs Recount2")
-  p9 = p9 + ylab(paste0(gene, " (log2(TPM+0.001))"))
+  p9 = p9 + ylab(paste0(gene, "\n(log2(TPM+0.001))"))
   
   allplots <- list(p1, p2, p3, p5,  p7,  p9 )
   
   layout = rbind( c(1, 2, 3,4,5), c(6,7,8,9,10))
   ml <- marrangeGrob(allplots, layout_matrix = layout,
                      top= textGrob(""))
+  pdf(file.path(results_dir, "pdf", "discordant_genes_GTEX", paste0("discordant_",gene,"_GTEX.pdf")),
+   width = 12, height = 7)
   print(ml)
+  dev.off()
 })
-dev.off()
+
 
 
 ```
