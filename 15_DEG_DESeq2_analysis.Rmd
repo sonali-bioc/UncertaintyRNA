@@ -1,0 +1,1129 @@
+---
+title: "Differential Gene Expression for cancer types using DEseq2"
+author: "Sonali Arora, Hamid Bolouri"
+date: "November 18, 2019"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+In this vignette, we compare three types of cancer types using DESeq2 for each of the pipelines. 
+DESeq2 requires raw counts to perform differential gene expression analysis. 
+Each pipeline in addition to RPKM data, has also made raw counts available, thus, we obtained the raw counts from each pipeline.
+They can be downloaded from our amazon s3 bucked using :
+
+```{}
+wget --recursive -nH --cut-dirs=1 https://s3-us-west-2.amazonaws.com/fh-pi-holland-e/OriginalTCGAGTExData/raw_counts/index.html
+```
+
+
+## Breast comparison
+
+In the next few code chunks, we find differentially expressed genes (DEGs) between Basal like sub type and 
+HER2E (HER2 enriched) sub type using DESeq2 from each of the pipelines. A statistical cutoff of 
+FDR < 0.05 & abs(log2fold change) >1 was used to find DEGs.
+
+### GDC
+
+```{r eval = FALSE}
+
+rm(list=ls())
+library(SummarizedExperiment)
+library(DESeq2)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData", "raw_counts")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data/de_analysis
+resdir = file.path(bigdir, "data", "de_analysis", "breast")
+
+brca = get(load(file.path(s3_dir, "gdc_TCGA-BRCA_counts_10_28_2019.Rdata")))
+
+goi= read.delim(file.path(s3_dir, "de_goi.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+basal_like_samples= read.delim(file.path(s3_dir,"brca_basal_like_samples.txt"), 
+                               header=TRUE, stringsAsFactors = FALSE )[,1]
+HER2_enriched_samples= read.delim(file.path(s3_dir,"brca_HER2_enriched_samples.txt"), 
+                                  header=TRUE, stringsAsFactors = FALSE )[,1]
+
+brca = brca[ match( goi, rowRanges(brca)$external_gene_name), ]
+
+a_idx =match( basal_like_samples, colData(brca)[,2] )
+b_idx =match( HER2_enriched_samples, colData(brca)[,2] )
+
+basal_like = assay(brca[, a_idx])
+HER2_enriched = assay(brca[, b_idx])
+
+rawdata = cbind(basal_like, HER2_enriched)
+coldata = cbind( sampleName = c(colnames(basal_like), colnames(HER2_enriched)), 
+                 sampleGroup = c(rep("basal_like", ncol(basal_like)), 
+                                 rep("HER2_enriched", ncol(HER2_enriched))  ))
+
+map = cbind(rownames(rawdata), goi)
+
+dds <- DESeqDataSetFromMatrix(countData = rawdata,
+                              colData = coldata, design = ~ sampleGroup)
+dds = DESeq(dds)
+lfc = log2(2)
+resdf <- results(dds, alpha = 0.05, lfcThreshold=lfc, 
+                 contrast = c("sampleGroup","basal_like", "HER2_enriched") )
+resdf = as.data.frame(resdf)
+resdf = cbind(geneName = map[match(rownames(resdf), map[,1]), 2], 
+              geneID = rownames(resdf), resdf)
+
+
+up_genes = resdf[ which(resdf$log2FoldChange > lfc &  resdf$padj < 0.05), ]
+down_genes = resdf[which(resdf$log2FoldChange < -lfc &  resdf$padj < 0.05), ]
+
+write.table(resdf, file.path(resdir, "HER2_enriched_vs_basal_like_gdc_deseq2_all_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(up_genes, file.path(resdir, "HER2_enriched_vs_basal_like_gdc_deseq2_up_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(down_genes, file.path(resdir, "HER2_enriched_vs_basal_like_gdc_deseq2_down_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+```
+
+### MSKCC 
+
+```{r eval = FALSE}
+rm(list=ls())
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData", "raw_counts")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data/de_analysis
+resdir = file.path(bigdir, "data", "de_analysis", "breast")
+
+
+brca = read.delim(file.path(s3_dir, "brca-rsem-count-tcga-t.txt"), 
+                  header=T, stringsAsFactors = FALSE, row.names = 1, check.names = FALSE)
+goi= read.delim(file.path(s3_dir, "de_goi.txt"), 
+                header=FALSE, stringsAsFactors = FALSE )[,1]
+basal_like_samples= read.delim(file.path(s3_dir,"brca_basal_like_samples.txt"), 
+                               header=TRUE, stringsAsFactors = FALSE )[,1]
+HER2_enriched_samples= read.delim(file.path(s3_dir,"brca_HER2_enriched_samples.txt"), 
+                                  header=TRUE, stringsAsFactors = FALSE )[,1]
+
+basal_like = brca[ match( goi, rownames(brca)), ]
+HER2_enriched = brca[ match( goi, rownames(brca)), ]
+
+basal_like = brca[, match( basal_like_samples, substr(colnames(brca), 1,12)) ]
+HER2_enriched = brca[ ,match( HER2_enriched_samples, substr(colnames(brca), 1,12)) ]
+
+library(DESeq2)
+rawdata = cbind(basal_like, HER2_enriched)
+rawdata = round(rawdata, 0)
+coldata = cbind( sampleName = c(colnames(basal_like), colnames(HER2_enriched)), 
+                 sampleGroup = c(rep("basal_like", ncol(basal_like)), 
+                                 rep("HER2_enriched", ncol(HER2_enriched))  ))
+
+dds <- DESeqDataSetFromMatrix(countData = rawdata,
+                              colData = coldata, design = ~ sampleGroup)
+dds = DESeq(dds)
+lfc = log2(2)
+resdf <- results(dds, alpha = 0.05, lfcThreshold=lfc, 
+                 contrast = c("sampleGroup","basal_like", "HER2_enriched") )
+resdf = as.data.frame(resdf)
+resdf = cbind(geneName =rownames(resdf), resdf)
+
+up_genes = resdf[ which(resdf$log2FoldChange > lfc &  resdf$padj < 0.05), ]
+down_genes = resdf[which(resdf$log2FoldChange < -lfc &  resdf$padj < 0.05), ]
+
+write.table(resdf, file.path(resdir, "HER2_enriched_vs_basal_like_mskcc_deseq2_all_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(up_genes, file.path(resdir, "HER2_enriched_vs_basal_like_mskcc_deseq2_up_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(down_genes, file.path(resdir, "HER2_enriched_vs_basal_like_mskcc_deseq2_down_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+```
+
+### Recount2
+
+```{r eval = FALSE}
+rm(list=ls())
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+recount_dir = file.path(bigdir,  "OriginalTCGAGTExData", "datasource_RECOUNT2_TCGA")
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData", "raw_counts")
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data/de_analysis
+resdir = file.path(bigdir, "data", "de_analysis", "breast")
+
+
+library(SummarizedExperiment)
+rse_gene = get(load(file.path(recount_dir, "rse_gene.Rdata")))
+
+col_nms = c("gdc_cases.samples.portions.analytes.aliquots.submitter_id", 
+            "cgc_case_batch_number",  
+            "gdc_cases.project.project_id", "auc") 
+col_idx = match(col_nms, colnames(colData(rse_gene)))
+colData(rse_gene) = colData(rse_gene)[, col_idx]
+
+
+goi= read.delim(file.path(s3_dir, "de_goi.txt"), 
+                header=FALSE, stringsAsFactors = FALSE )[,1]
+basal_like_samples= read.delim(file.path(s3_dir,"brca_basal_like_samples.txt"), 
+                               header=TRUE, stringsAsFactors = FALSE )[,1]
+HER2_enriched_samples= read.delim(file.path(s3_dir,"brca_HER2_enriched_samples.txt"), 
+                                  header=TRUE, stringsAsFactors = FALSE )[,1]
+
+test = sapply(rowRanges(rse_gene)$symbol, function(x) x[1])
+row_idx = match(goi, test)
+
+basal_like = rse_gene[, match( basal_like_samples, substr(colData(rse_gene)[,1], 1, 12))]
+HER2_enriched = rse_gene[, match( HER2_enriched_samples, substr(colData(rse_gene)[,1], 1, 12))]
+
+
+basal_like =  basal_like[ row_idx, ]
+HER2_enriched = HER2_enriched[ row_idx, ]
+
+library("recount")
+basal_like <- scale_counts(basal_like, round = TRUE)
+HER2_enriched <- scale_counts(HER2_enriched, round = TRUE)
+
+basal_like = assay(basal_like)
+HER2_enriched = assay(HER2_enriched)
+
+rownames(basal_like) = goi
+rownames(HER2_enriched) = goi
+colnames(basal_like) = basal_like_samples
+colnames(HER2_enriched) = HER2_enriched_samples
+
+
+library(DESeq2)
+rawdata = cbind(basal_like, HER2_enriched)
+rawdata = round(rawdata, 0)
+coldata = cbind( sampleName = c(colnames(basal_like), colnames(HER2_enriched)), 
+                 sampleGroup = c(rep("basal_like", ncol(basal_like)), 
+                                 rep("HER2_enriched", ncol(HER2_enriched))  ))
+
+dds <- DESeqDataSetFromMatrix(countData = rawdata,
+                              colData = coldata, design = ~ sampleGroup)
+dds = DESeq(dds)
+lfc = log2(2)
+resdf <- results(dds, alpha = 0.05, lfcThreshold=lfc, 
+                 contrast = c("sampleGroup", "basal_like", "HER2_enriched") )
+resdf = as.data.frame(resdf)
+resdf = cbind(geneName = rownames(resdf), resdf)
+
+up_genes = resdf[ which(resdf$log2FoldChange > lfc &  resdf$padj < 0.05), ]
+down_genes = resdf[which(resdf$log2FoldChange < -lfc &  resdf$padj < 0.05), ]
+
+
+write.table(resdf, file.path(resdir, "HER2_enriched_vs_basal_like_RECOUNT2_deseq2_all_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(up_genes, file.path(resdir, "HER2_enriched_vs_basal_like_RECOUNT2_deseq2_up_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(down_genes, file.path(resdir, "HER2_enriched_vs_basal_like_RECOUNT2_deseq2_down_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+```
+
+### Xena/Toil
+
+```{r eval = FALSE}
+rm(list=ls())
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData", "raw_counts")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data/de_analysis
+resdir = file.path(bigdir, "data", "de_analysis", "breast")
+
+
+data = read.delim(file.path(s3_dir,"OnlyTcga_gene_expected_count"), 
+                  header = T, stringsAsFactors = FALSE, row.names = 1, 
+                  check.names = FALSE)
+
+map = read.delim(file.path(s3_dir, "gene_map_xena.txt"), header=T, stringsAsFactors = FALSE)
+goi= read.delim(file.path(s3_dir, "de_goi.txt"), 
+                header=FALSE, stringsAsFactors = FALSE )[,1]
+basal_like_samples= read.delim(file.path(s3_dir,"brca_basal_like_samples.txt"), 
+                header=TRUE, stringsAsFactors = FALSE )[,1]
+HER2_enriched_samples= read.delim(file.path(s3_dir,"brca_HER2_enriched_samples.txt"), 
+                header=TRUE, stringsAsFactors = FALSE )[,1]
+
+basal_like = data[, match( basal_like_samples, substr(colnames(data), 1,12)) ]
+HER2_enriched = data[ ,match( HER2_enriched_samples, substr(colnames(data), 1,12)) ]
+
+row_idx = map[match(goi, map[,2]), 1]
+basal_like = basal_like[ row_idx, ]
+HER2_enriched = HER2_enriched[ row_idx, ]
+
+basal_like =2^basal_like - 1
+HER2_enriched =2^HER2_enriched - 1
+
+library(DESeq2)
+rawdata = cbind(basal_like, HER2_enriched)
+rawdata = round(rawdata, 0)
+coldata = cbind( sampleName = c(colnames(basal_like), colnames(HER2_enriched)), 
+                 sampleGroup = c(rep("basal_like", ncol(basal_like)), rep("HER2_enriched", ncol(HER2_enriched))  ))
+
+dds <- DESeqDataSetFromMatrix(countData = rawdata,
+                              colData = coldata, design = ~ sampleGroup)
+dds = DESeq(dds)
+lfc = log2(2)
+
+resdf <- results(dds, alpha = 0.05, lfcThreshold=lfc, 
+                 contrast = c("sampleGroup", "basal_like", "HER2_enriched") )
+resdf = as.data.frame(resdf)
+resdf = cbind(geneName = map[match(rownames(resdf), map[,1]), 2], 
+              geneID =rownames(resdf), resdf)
+
+up_genes = resdf[ which(resdf$log2FoldChange > lfc &  resdf$padj < 0.05), ]
+down_genes = resdf[which(resdf$log2FoldChange < -lfc &  resdf$padj < 0.05), ]
+
+write.table(resdf, file.path(resdir, "HER2_enriched_vs_basal_like_XENA_deseq2_all_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(up_genes, file.path(resdir, "HER2_enriched_vs_basal_like_XENA_deseq2_up_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(down_genes, file.path(resdir, "HER2_enriched_vs_basal_like_XENA_deseq2_down_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+```
+
+### Piccolo
+
+```{r eval = FALSE}
+rm(list=ls())
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData", "raw_counts")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data/de_analysis
+resdir = file.path(bigdir, "data", "de_analysis", "breast")
+
+data = read.delim(file.path(s3_dir, "GSM1536837_01_27_15_TCGA_20.Illumina.tumor_Rsubread_FeatureCounts.txt"), 
+        header = T, stringsAsFactors = FALSE, row.names = 1, check.names = FALSE)
+goi= read.delim(file.path(s3_dir, "de_goi.txt"), 
+                header=FALSE, stringsAsFactors = FALSE )[,1]
+basal_like_samples= read.delim(file.path(s3_dir,"brca_basal_like_samples.txt"), 
+                header=TRUE, stringsAsFactors = FALSE )[,1]
+HER2_enriched_samples= read.delim(file.path(s3_dir,"brca_HER2_enriched_samples.txt"), 
+                header=TRUE, stringsAsFactors = FALSE )[,1]
+
+basal_like = data[, match(basal_like_samples, substr(colnames(data), 1 ,12) )]
+HER2_enriched = data[, match(HER2_enriched_samples, substr(colnames(data), 1 ,12) )]
+
+row_idx =match( goi, rownames(data))
+basal_like = basal_like[ row_idx, ]
+HER2_enriched = HER2_enriched[ row_idx, ]
+
+
+library(DESeq2)
+rawdata = cbind(basal_like, HER2_enriched)
+rawdata = round(rawdata, 0)
+coldata = cbind( sampleName = c(colnames(basal_like), colnames(HER2_enriched)), 
+                 sampleGroup = c(rep("basal_like", ncol(basal_like)), 
+                                 rep("HER2_enriched", ncol(HER2_enriched))  ))
+
+dds <- DESeqDataSetFromMatrix(countData = rawdata,
+                              colData = coldata, design = ~ sampleGroup)
+dds = DESeq(dds)
+lfc = log2(2)
+resdf <- results(dds, alpha = 0.05, lfcThreshold=lfc, 
+                 contrast = c("sampleGroup","basal_like", "HER2_enriched" ) )
+resdf = as.data.frame(resdf)
+resdf = cbind(geneName = rownames(resdf), resdf)
+
+up_genes = resdf[ which(resdf$log2FoldChange > lfc &  resdf$padj < 0.05), ]
+down_genes = resdf[which(resdf$log2FoldChange < -lfc &  resdf$padj < 0.05), ]
+
+
+
+write.table(resdf, file.path(resdir, "HER2_enriched_vs_basal_like_Piccolo_deseq2_all_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(up_genes, file.path(resdir, "HER2_enriched_vs_basal_like_Piccolo_deseq2_up_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(down_genes, file.path(resdir, "HER2_enriched_vs_basal_like_Piccolo_deseq2_down_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+```
+
+## Lung Comparison
+
+In the next few code chunks , we find DEGs between Lung adenocarcinoma(TCGA-LUAD) 
+compared to Lung squamous cell carcinoma ( TCGA-LUSC) using DESeq2 from each of the pipelines. A statistical cutoff of 
+FDR < 0.05 & abs(log2foldchange) >1 was used to find DEGs.
+
+### GDC 
+
+```{r eval = FALSE}
+rm(list=ls())
+library(SummarizedExperiment)
+library(DESeq2)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData", "raw_counts")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data/de_analysis
+resdir = file.path(bigdir, "data", "de_analysis", "lung")
+
+
+luad = get(load(file.path(s3_dir, "gdc_TCGA-LUAD_counts_10_28_2019.Rdata")))
+lusc= get(load(file.path(s3_dir, "gdc_TCGA-LUSC_counts_10_28_2019.Rdata")))
+
+goi= read.delim(file.path(s3_dir, "de_goi.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+luad_samples= read.delim(file.path(s3_dir,"luad_samples.txt"), 
+                         header=FALSE, stringsAsFactors = FALSE )[,1]
+lusc_samples= read.delim(file.path(s3_dir,"lusc_samples.txt"), 
+                         header=FALSE, stringsAsFactors = FALSE )[,1]
+
+luad = luad[ ,match(luad_samples, colnames(luad)) ] 
+lusc = lusc[ ,match(lusc_samples, colnames(lusc)) ] 
+
+luad = luad[ match(goi, rowRanges(luad)$external_gene_name), ] 
+lusc = lusc[ match(goi, rowRanges(lusc)$external_gene_name), ] 
+
+rawdata = cbind(assay(luad), assay(lusc))
+coldata = cbind( sampleName = c(colnames(luad), colnames(lusc)), 
+                 sampleGroup = c(rep("luad", ncol(luad)), rep("lusc", ncol(lusc))  ))
+map = cbind(rownames(rawdata), goi)
+
+dds <- DESeqDataSetFromMatrix(countData = rawdata,
+                              colData = coldata, design = ~ sampleGroup)
+dds = DESeq(dds)
+lfc = log2(2)
+# a character vector with exactly three elements: the name
+# of a factor in the design formula, the name of the
+# numerator level for the fold change, and the name of the
+# denominator level for the fold change (simplest case)
+resdf <- results(dds, alpha = 0.05, lfcThreshold=lfc, contrast = c("sampleGroup", "luad", "lusc") )
+resdf = as.data.frame(resdf)
+resdf = cbind(geneName = map[match(rownames(resdf), map[,1]), 2], 
+              geneID = rownames(resdf), resdf)
+
+
+up_genes = resdf[ which(resdf$log2FoldChange > lfc &  resdf$padj < 0.05), ]
+down_genes = resdf[which(resdf$log2FoldChange < -lfc &  resdf$padj < 0.05), ]
+message(  nrow(up_genes), ":down=", nrow(down_genes) )
+
+
+write.table(resdf, file.path(resdir, "lusc_vs_luad_gdc_deseq2_all_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(up_genes, file.path(resdir, "lusc_vs_luad_gdc_deseq2_up_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(down_genes, file.path(resdir, "lusc_vs_luad_gdc_deseq2_down_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+```
+
+### MSKCC 
+
+```{r eval = FALSE}
+rm(list=ls())
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData", "raw_counts")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data/de_analysis
+resdir = file.path(bigdir, "data", "de_analysis", "lung")
+
+
+luad = read.delim(file.path(s3_dir, "luad-rsem-count-tcga-t.txt"), 
+                  header=T, stringsAsFactors = FALSE, row.names = 1, check.names = FALSE)
+
+lusc = read.delim(file.path(s3_dir, "lusc-rsem-count-tcga-t.txt"),
+                  header=T, stringsAsFactors = FALSE, row.names = 1, check.names = FALSE)
+
+
+goi= read.delim(file.path(s3_dir, "de_goi.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+luad_samples= read.delim(file.path(s3_dir,"luad_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+lusc_samples= read.delim(file.path(s3_dir,"lusc_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+
+luad = luad[ match( goi, rownames(luad)), ]
+lusc = lusc[ match( goi, rownames(lusc)), ]
+
+luad = luad[, match( luad_samples, colnames(luad)) ]
+lusc = lusc[ ,match( lusc_samples, colnames(lusc)) ]
+
+library(DESeq2)
+rawdata = cbind(luad, lusc)
+rawdata = round(rawdata, 0)
+coldata = cbind( sampleName = c(colnames(luad), colnames(lusc)), 
+                 sampleGroup = c(rep("luad", ncol(luad)), rep("lusc", ncol(lusc))  ))
+
+dds <- DESeqDataSetFromMatrix(countData = rawdata,
+                              colData = coldata, design = ~ sampleGroup)
+dds = DESeq(dds)
+lfc = log2(2)
+resdf <- results(dds, alpha = 0.05, lfcThreshold=lfc, contrast = c("sampleGroup", "luad", "lusc") )
+resdf = as.data.frame(resdf)
+resdf = cbind(geneName =rownames(resdf), resdf)
+
+up_genes = resdf[ which(resdf$log2FoldChange > lfc &  resdf$padj < 0.05), ]
+down_genes = resdf[which(resdf$log2FoldChange < -lfc &  resdf$padj < 0.05), ]
+
+
+
+write.table(resdf, file.path(resdir, "lusc_vs_luad_mskcc_deseq2_all_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(up_genes, file.path(resdir, "lusc_vs_luad_mskcc_deseq2_up_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(down_genes, file.path(resdir, "lusc_vs_luad_mskcc_deseq2_down_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+```
+
+### Recount2
+
+```{r eval = FALSE}
+rm(list=ls())
+
+library(SummarizedExperiment)
+library("recount")
+library(DESeq2)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+recount_dir = file.path(bigdir,  "OriginalTCGAGTExData", "datasource_RECOUNT2_TCGA")
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData", "raw_counts")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data/de_analysis
+resdir = file.path(bigdir, "data", "de_analysis", "lung")
+
+
+rse_gene = get(load(file.path(recount_dir, "rse_gene.Rdata")))
+
+col_nms = c("gdc_cases.samples.portions.analytes.aliquots.submitter_id", 
+            "cgc_case_batch_number",  
+            "gdc_cases.project.project_id", "auc") 
+col_idx = match(col_nms, colnames(colData(rse_gene)))
+colData(rse_gene) = colData(rse_gene)[, col_idx]
+
+
+goi= read.delim(file.path(s3_dir, "de_goi.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+luad_samples= read.delim(file.path(s3_dir,"luad_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+lusc_samples= read.delim(file.path(s3_dir,"lusc_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+
+table(is.na(match( luad_samples, colData(rse_gene)[,1])))
+table(is.na(match( lusc_samples, colData(rse_gene)[,1])))
+
+test = sapply(rowRanges(rse_gene)$symbol, function(x) x[1])
+row_idx = match(goi, test)
+
+table(is.na(row_idx))
+
+luad = rse_gene[, match( luad_samples, colData(rse_gene)[,1])]
+lusc = rse_gene[, match( lusc_samples, colData(rse_gene)[,1])]
+
+luad =  luad[ row_idx, ]
+lusc = lusc[ row_idx, ]
+
+
+luad <- scale_counts(luad, round = TRUE)
+lusc <- scale_counts(lusc, round = TRUE)
+
+luad = assay(luad)
+lusc = assay(lusc)
+
+rownames(luad) = goi
+rownames(lusc) = goi
+colnames(luad) = luad_samples
+colnames(lusc) = lusc_samples
+
+rawdata = cbind(luad, lusc)
+rawdata = round(rawdata, 0)
+coldata = cbind( sampleName = c(colnames(luad), colnames(lusc)), 
+                 sampleGroup = c(rep("luad", ncol(luad)), rep("lusc", ncol(lusc))  ))
+
+dds <- DESeqDataSetFromMatrix(countData = rawdata,
+                              colData = coldata, design = ~ sampleGroup)
+dds = DESeq(dds)
+lfc = log2(2)
+resdf <- results(dds, alpha = 0.05, lfcThreshold=lfc, contrast = c("sampleGroup", "luad", "lusc") )
+resdf = as.data.frame(resdf)
+resdf = cbind(geneName = rownames(resdf), resdf)
+
+up_genes = resdf[ which(resdf$log2FoldChange > lfc &  resdf$padj < 0.05), ]
+down_genes = resdf[which(resdf$log2FoldChange < -lfc &  resdf$padj < 0.05), ]
+
+write.table(resdf, file.path(resdir, "lusc_vs_luad_RECOUNT2_deseq2_all_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(up_genes, file.path(resdir, "lusc_vs_luad_RECOUNT2_deseq2_up_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(down_genes, file.path(resdir, "lusc_vs_luad_RECOUNT2_deseq2_down_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+
+```
+
+### Piccolo 
+
+```{r eval = FALSE}
+rm(list=ls())
+
+library(DESeq2)
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData", "raw_counts")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data/de_analysis
+resdir = file.path(bigdir, "data", "de_analysis", "lung")
+
+data = read.delim(file.path(s3_dir, "GSM1536837_01_27_15_TCGA_20.Illumina.tumor_Rsubread_FeatureCounts.txt"), 
+    header = T, stringsAsFactors = FALSE, row.names = 1, check.names = FALSE)
+
+goi= read.delim(file.path(s3_dir, "de_goi.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+luad_samples= read.delim(file.path(s3_dir,"luad_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+lusc_samples= read.delim(file.path(s3_dir,"lusc_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+
+luad = data[, match(luad_samples, colnames(data) )]
+lusc = data[, match(lusc_samples, colnames(data) )]
+
+row_idx =match( goi, rownames(data))
+luad = luad[ row_idx, ]
+lusc = lusc[ row_idx, ]
+
+rawdata = cbind(luad, lusc)
+rawdata = round(rawdata, 0)
+coldata = cbind( sampleName = c(colnames(luad), colnames(lusc)), 
+                 sampleGroup = c(rep("luad", ncol(luad)), rep("lusc", ncol(lusc))  ))
+
+dds <- DESeqDataSetFromMatrix(countData = rawdata,
+                              colData = coldata, design = ~ sampleGroup)
+dds = DESeq(dds)
+lfc = log2(2)
+resdf <- results(dds, alpha = 0.05, lfcThreshold=lfc, contrast = c("sampleGroup", "luad", "lusc") )
+resdf = as.data.frame(resdf)
+resdf = cbind(geneName = rownames(resdf), resdf)
+
+up_genes = resdf[ which(resdf$log2FoldChange > lfc &  resdf$padj < 0.05), ]
+down_genes = resdf[which(resdf$log2FoldChange < -lfc &  resdf$padj < 0.05), ]
+
+write.table(resdf, file.path(resdir, "lusc_vs_luad_Piccolo_deseq2_all_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(up_genes, file.path(resdir, "lusc_vs_luad_Piccolo_deseq2_up_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(down_genes, file.path(resdir, "lusc_vs_luad_Piccolo_deseq2_down_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+```
+
+### Xena/Toil
+
+```{r eval = FALSE}
+
+rm(list=ls())
+
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData", "raw_counts")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data/de_analysis
+resdir = file.path(bigdir, "data", "de_analysis", "lung")
+
+
+data = read.delim(file.path(s3_dir, "OnlyTcga_gene_expected_count"), 
+                  header = T, stringsAsFactors = FALSE, row.names = 1, 
+                  check.names = FALSE)
+map = read.delim(file.path(s3_dir, "gene_map_xena.txt"), header=T, stringsAsFactors = FALSE)
+
+
+goi= read.delim(file.path(s3_dir, "de_goi.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+luad_samples= read.delim(file.path(s3_dir,"luad_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+lusc_samples= read.delim(file.path(s3_dir,"lusc_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+
+luad_idx = match(substr(luad_samples, 1, 15), substr(colnames(data), 1, 15)  )
+lusc_idx = match(substr(lusc_samples, 1, 15), substr(colnames(data), 1, 15)  )
+row_idx = map[match(goi, map[,2]), 1]
+
+luad = data[, luad_idx]
+lusc = data[, lusc_idx]
+
+luad = luad[ row_idx, ]
+lusc = lusc[ row_idx, ]
+
+luad =2^luad - 1
+lusc =2^lusc - 1
+
+library(DESeq2)
+rawdata = cbind(luad, lusc)
+rawdata = round(rawdata, 0)
+coldata = cbind( sampleName = c(colnames(luad), colnames(lusc)), 
+                 sampleGroup = c(rep("luad", ncol(luad)), rep("lusc", ncol(lusc))  ))
+
+dds <- DESeqDataSetFromMatrix(countData = rawdata,
+                              colData = coldata, design = ~ sampleGroup)
+dds = DESeq(dds)
+lfc = log2(2)
+resdf <- results(dds, alpha = 0.05, lfcThreshold=lfc, contrast = c("sampleGroup", "lusc", "luad") )
+resdf = as.data.frame(resdf)
+resdf = cbind(geneName = map[match(rownames(resdf), map[,1]), 2], 
+              geneID =rownames(resdf), resdf)
+
+up_genes = resdf[ which(resdf$log2FoldChange > lfc &  resdf$padj < 0.05), ]
+down_genes = resdf[which(resdf$log2FoldChange < -lfc &  resdf$padj < 0.05), ]
+
+write.table(resdf, file.path(resdir, "lusc_vs_luad_XENA_deseq2_all_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(up_genes, file.path(resdir, "lusc_vs_luad_XENA_deseq2_up_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(down_genes, file.path(resdir, "lusc_vs_luad_XENA_deseq2_down_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+```
+
+
+## Kidney Comparison
+
+In the next few code chunks, we find DEGs between Kidney renal clear cell carcinoma 
+(TCGA-KIRC)  compared to Kidney renal papillary cell carcinoma(TCGA-KIRP) using DESeq2 from each of the pipelines.
+A statistical cutoff of FDR < 0.05 & abs(log2foldchange) >1 was used to find DEGs.
+
+### GDC 
+
+```{r eval = FALSE}
+rm(list=ls())
+library(SummarizedExperiment)
+library(DESeq2)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData", "raw_counts")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data/de_analysis
+resdir = file.path(bigdir, "data", "de_analysis", "kidney")
+
+kirc = get(load(file.path(s3_dir, "gdc_TCGA-KIRC_counts_10_28_2019.Rdata")))
+kirp= get(load(file.path(s3_dir, "gdc_TCGA-KIRP_counts_10_28_2019.Rdata")))
+
+goi= read.delim(file.path(s3_dir, "de_goi.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+kirc_samples= read.delim(file.path(s3_dir,"kirc_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+kirp_samples= read.delim(file.path(s3_dir,"kirp_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+
+kirc = kirc[ match(goi, rowRanges(kirc)$external_gene_name), ] 
+kirp = kirp[ match(goi, rowRanges(kirp)$external_gene_name), ] 
+
+kirc = kirc[ ,match(kirc_samples, colnames(kirc)) ] 
+kirp = kirp[ ,match(kirp_samples, colnames(kirp)) ] 
+
+rawdata = cbind(assay(kirc), assay(kirp))
+coldata = cbind( sampleName = c(colnames(kirc), colnames(kirp)), 
+                 sampleGroup = c(rep("kirc", ncol(kirc)), rep("kirp", ncol(kirp))  ))
+map = cbind(rownames(rawdata), goi)
+
+dds <- DESeqDataSetFromMatrix(countData = rawdata,
+                              colData = coldata, design = ~ sampleGroup)
+dds = DESeq(dds)
+lfc = log2(2)
+
+resdf <- results(dds, alpha = 0.05, lfcThreshold=lfc, contrast = c("sampleGroup", "kirc", "kirp") )
+resdf = as.data.frame(resdf)
+resdf = cbind(geneName = map[match(rownames(resdf), map[,1]), 2], 
+              geneID = rownames(resdf), resdf)
+
+up_genes = resdf[ which(resdf$log2FoldChange > lfc &  resdf$padj < 0.05), ]
+down_genes = resdf[which(resdf$log2FoldChange < -lfc &  resdf$padj < 0.05), ]
+
+write.table(resdf, file.path(resdir, "kirp_vs_kirc_gdc_deseq2_all_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(up_genes, file.path(resdir, "kirp_vs_kirc_gdc_deseq2_up_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(down_genes, file.path(resdir, "kirp_vs_kirc_gdc_deseq2_down_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+
+```
+
+### MSKCC 
+
+```{r eval = FALSE}
+rm(list=ls())
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData", "raw_counts")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data/de_analysis
+resdir = file.path(bigdir, "data", "de_analysis", "kidney")
+
+
+kirc = read.delim(file.path(s3_dir, "kirc-rsem-count-tcga-t.txt"), 
+                  header=T, stringsAsFactors = FALSE, row.names = 1, check.names = FALSE)
+
+kirp = read.delim(file.path(s3_dir, "kirp-rsem-count-tcga-t.txt"),
+                  header=T, stringsAsFactors = FALSE, row.names = 1, check.names = FALSE)
+
+goi= read.delim(file.path(s3_dir, "de_goi.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+kirc_samples= read.delim(file.path(s3_dir,"kirc_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+kirp_samples= read.delim(file.path(s3_dir,"kirp_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+
+
+kirc = kirc[ match( goi, rownames(kirc)), ]
+kirp = kirp[ match( goi, rownames(kirp)), ]
+
+kirc = kirc[, match( kirc_samples, colnames(kirc)) ]
+kirp = kirp[ ,match( kirp_samples, colnames(kirp)) ]
+
+library(DESeq2)
+rawdata = cbind(kirc, kirp)
+rawdata = round(rawdata, 0)
+coldata = cbind( sampleName = c(colnames(kirc), colnames(kirp)), 
+                 sampleGroup = c(rep("kirc", ncol(kirc)), rep("kirp", ncol(kirp))  ))
+
+dds <- DESeqDataSetFromMatrix(countData = rawdata,
+                              colData = coldata, design = ~ sampleGroup)
+dds = DESeq(dds)
+lfc = log2(2)
+resdf <- results(dds, alpha = 0.05, lfcThreshold=lfc, contrast = c("sampleGroup", "kirc", "kirp") )
+resdf = as.data.frame(resdf)
+resdf = cbind(geneName =rownames(resdf), resdf)
+
+up_genes = resdf[ which(resdf$log2FoldChange > lfc &  resdf$padj < 0.05), ]
+down_genes = resdf[which(resdf$log2FoldChange < -lfc &  resdf$padj < 0.05), ]
+message(  nrow(up_genes), ":down=", nrow(down_genes) )
+
+
+write.table(resdf, file.path(resdir, "kirp_vs_kirc_mskcc_deseq2_all_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(up_genes, file.path(resdir, "kirp_vs_kirc_mskcc_deseq2_up_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(down_genes, file.path(resdir, "kirp_vs_kirc_mskcc_deseq2_down_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+```
+
+### Recount2
+
+```{r eval = FALSE}
+rm(list=ls())
+
+library(SummarizedExperiment)
+library("recount")
+library(DESeq2)
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+recount_dir = file.path(bigdir,  "OriginalTCGAGTExData", "datasource_RECOUNT2_TCGA")
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData", "raw_counts")
+
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data/de_analysis
+resdir = file.path(bigdir, "data", "de_analysis", "kidney")
+
+
+
+rse_gene = get(load(file.path(recount_dir, "rse_gene.Rdata")))
+
+col_nms = c("gdc_cases.samples.portions.analytes.aliquots.submitter_id", 
+            "cgc_case_batch_number",  
+            "gdc_cases.project.project_id", "auc") 
+col_idx = match(col_nms, colnames(colData(rse_gene)))
+colData(rse_gene) = colData(rse_gene)[, col_idx]
+
+goi= read.delim(file.path(s3_dir, "de_goi.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+kirc_samples= read.delim(file.path(s3_dir,"kirc_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+kirp_samples= read.delim(file.path(s3_dir,"kirp_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+
+
+test = sapply(rowRanges(rse_gene)$symbol, function(x) x[1])
+row_idx = match(goi, test)
+
+
+kirc = rse_gene[, match( kirc_samples, colData(rse_gene)[,1])]
+kirp = rse_gene[, match( kirp_samples, colData(rse_gene)[,1])]
+
+kirc =  kirc[ row_idx, ]
+kirp = kirp[ row_idx, ]
+
+
+kirc <- scale_counts(kirc, round = TRUE)
+kirp <- scale_counts(kirp, round = TRUE)
+
+kirc = assay(kirc)
+kirp = assay(kirp)
+
+rownames(kirc) = goi
+rownames(kirp) = goi
+colnames(kirc) = kirc_samples
+colnames(kirp) = kirp_samples
+
+rawdata = cbind(kirc, kirp)
+rawdata = round(rawdata, 0)
+coldata = cbind( sampleName = c(colnames(kirc), colnames(kirp)), 
+                 sampleGroup = c(rep("kirc", ncol(kirc)), rep("kirp", ncol(kirp))  ))
+
+dds <- DESeqDataSetFromMatrix(countData = rawdata,
+                              colData = coldata, design = ~ sampleGroup)
+dds = DESeq(dds)
+lfc = log2(2)
+resdf <- results(dds, alpha = 0.05, lfcThreshold=lfc, contrast = c("sampleGroup", "kirc", "kirp" ))
+resdf = as.data.frame(resdf)
+resdf = cbind(geneName = rownames(resdf), resdf)
+
+up_genes = resdf[ which(resdf$log2FoldChange > lfc &  resdf$padj < 0.05), ]
+down_genes = resdf[which(resdf$log2FoldChange < -lfc &  resdf$padj < 0.05), ]
+
+write.table(resdf, file.path(resdir, "kirp_vs_kirc_RECOUNT2_deseq2_all_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(up_genes, file.path(resdir, "kirp_vs_kirc_RECOUNT2_deseq2_up_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(down_genes, file.path(resdir, "kirp_vs_kirc_RECOUNT2_deseq2_down_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+```
+
+### Piccolo 
+
+```{r eval = FALSE}
+rm(list=ls())
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData", "raw_counts")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data/de_analysis
+resdir = file.path(bigdir, "data", "de_analysis", "kidney")
+
+
+data = read.delim(file.path(s3_dir, "GSM1536837_01_27_15_TCGA_20.Illumina.tumor_Rsubread_FeatureCounts.txt"), 
+                  header = T, stringsAsFactors = FALSE, row.names = 1, 
+                  check.names = FALSE)
+
+
+goi= read.delim(file.path(s3_dir, "de_goi.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+kirc_samples= read.delim(file.path(s3_dir,"kirc_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+kirp_samples= read.delim(file.path(s3_dir,"kirp_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+
+kirc = data[, match(kirc_samples, colnames(data) )]
+kirp = data[, match(kirp_samples, colnames(data) )]
+
+row_idx =match( goi, rownames(data))
+kirc = kirc[ row_idx, ]
+kirp = kirp[ row_idx, ]
+
+
+library(DESeq2)
+rawdata = cbind(kirc, kirp)
+rawdata = round(rawdata, 0)
+coldata = cbind( sampleName = c(colnames(kirc), colnames(kirp)), 
+                 sampleGroup = c(rep("kirc", ncol(kirc)), rep("kirp", ncol(kirp))  ))
+
+dds <- DESeqDataSetFromMatrix(countData = rawdata,
+                              colData = coldata, design = ~ sampleGroup)
+dds = DESeq(dds)
+lfc = log2(2)
+resdf <- results(dds, alpha = 0.05, lfcThreshold=lfc, contrast = c("sampleGroup", "kirc", "kirp" ))
+resdf = as.data.frame(resdf)
+resdf = cbind(geneName = rownames(resdf), resdf)
+
+up_genes = resdf[ which(resdf$log2FoldChange > lfc &  resdf$padj < 0.05), ]
+down_genes = resdf[which(resdf$log2FoldChange < -lfc &  resdf$padj < 0.05), ]
+
+
+write.table(resdf, file.path(resdir, "kirp_vs_kirc_Piccolo_deseq2_all_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(up_genes, file.path(resdir, "kirp_vs_kirc_Piccolo_deseq2_up_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(down_genes, file.path(resdir, "kirp_vs_kirc_Piccolo_deseq2_down_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+```
+
+### Xena/Toil
+
+```{r eval = FALSE}
+
+rm(list=ls())
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData", "raw_counts")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data/de_analysis
+resdir = file.path(bigdir, "data", "de_analysis", "kidney")
+
+data = read.delim(file.path(s3d_dir,"OnlyTcga_gene_expected_count"), 
+                  header = T, stringsAsFactors = FALSE, row.names = 1, 
+                  check.names = FALSE)
+
+map = read.delim(file.path(s3_dir, "gene_map_xena.txt"), header=T, stringsAsFactors = FALSE)
+
+goi= read.delim(file.path(s3_dir, "de_goi.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+kirc_samples= read.delim(file.path(s3_dir,"kirc_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+kirp_samples= read.delim(file.path(s3_dir,"kirp_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+
+kirc_idx = match(substr(kirc_samples, 1, 15), substr(colnames(data), 1, 15)  )
+kirp_idx = match(substr(kirp_samples, 1, 15), substr(colnames(data), 1, 15)  )
+row_idx = map[match(goi, map[,2]), 1]
+
+
+kirc = data[, kirc_idx]
+kirp = data[, kirp_idx]
+
+kirc = kirc[ row_idx, ]
+kirp = kirp[ row_idx, ]
+
+kirc =2^kirc - 1
+kirp =2^kirp - 1
+
+
+library(DESeq2)
+rawdata = cbind(kirc, kirp)
+rawdata = round(rawdata, 0)
+coldata = cbind( sampleName = c(colnames(kirc), colnames(kirp)), 
+                 sampleGroup = c(rep("kirc", ncol(kirc)), rep("kirp", ncol(kirp))  ))
+
+dds <- DESeqDataSetFromMatrix(countData = rawdata,
+                              colData = coldata, design = ~ sampleGroup)
+dds = DESeq(dds)
+lfc = log2(2)
+resdf <- results(dds, alpha = 0.05, lfcThreshold=lfc, contrast = c("sampleGroup","kirc", "kirp" ))
+resdf = as.data.frame(resdf)
+resdf = cbind(geneName = map[match(rownames(resdf), map[,1]), 2], 
+              geneID =rownames(resdf), resdf)
+
+up_genes = resdf[ which(resdf$log2FoldChange > lfc &  resdf$padj < 0.05), ]
+down_genes = resdf[which(resdf$log2FoldChange < -lfc &  resdf$padj < 0.05), ]
+message(  nrow(up_genes), ":down=", nrow(down_genes) )
+
+
+write.table(resdf, file.path(resdir, "kirp_vs_kirc_XENA_deseq2_all_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(up_genes, file.path(resdir, "kirp_vs_kirc_XENA_deseq2_up_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(down_genes, file.path(resdir, "kirp_vs_kirc_XENA_deseq2_down_reg_genes.txt"), 
+            sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+```
+
+
+## Supplemental Tables for DEseq2 analysis
+
+In the section below, we combine differential gene expression results for all three cancer types
+to make one supplemental table which is included in our paper.
+
+```{r eval=FALSE}
+rm(list=ls())
+
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData", "raw_counts")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data/de_analysis
+resdir = file.path(bigdir, "data", "de_analysis")
+
+fls = list.files(pattern ="_deseq2_all_genes.txt", recursive=T, 
+                 full.names=TRUE, path = resdir)
+
+
+goi = read.delim(file.path(s3_dir, "de_goi.txt"), 
+                 header=F, stringsAsFactors = FALSE)[,1]
+tag_lst = c("HER2_enriched_vs_basal_like", 
+            "kirp_vs_kirc", 
+            "lusc_vs_luad")
+names(tag_lst) = c("Breast", "Kidney", "Lung")
+
+lapply(tag_lst, function(tag){
+  small_fls = grep(tag, fls, value=T)
+  ppl_lst = c("GDC", "MSKCC", "Piccolo", "Recount2", "Xena/Toil")
+  
+  bigdf = lapply(1:length(small_fls), function(idx){
+    pipeline  = ppl_lst[idx]
+    x = small_fls[idx]
+    
+    df = read.delim(x, header=T, stringsAsFactors = FALSE, row.names=1)
+    up_idx  = which(df$log2FoldChange >1 & df$padj < 0.05)
+    down_idx  = which(df$log2FoldChange < -1 & df$padj < 0.05)
+    df$status = rep("Not_differentially_expressed", nrow(df))
+    df$status[up_idx] = "up_regulated"
+    df$status[down_idx] = "down_regulated"
+    df = df[, c( "log2FoldChange", "padj", "status")]
+    colnames(df) = paste0(pipeline, "_", colnames(df))
+    df= df[goi, ]
+    message(nrow(df))
+    df
+  })
+  bigdf = do.call(cbind, bigdf)
+  
+  bigdf = cbind(geneName = rownames(bigdf), bigdf)
+  
+  write.table(bigdf, 
+              file.path(resdir, paste0("Supp_Table_7_DE_results_", tag, ".txt")), 
+              sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+  
+})
+
+
+```
+
