@@ -95,7 +95,8 @@ wget --recursive -nH --cut-dirs=1 https://s3-us-west-2.amazonaws.com/fh-pi-holla
 wget --recursive -nH --cut-dirs=1 https://s3-us-west-2.amazonaws.com/fh-pi-holland-e/OriginalTCGAGTExData/datasource_RECOUNT2_TCGA/index.html
 
 wget --recursive -nH --cut-dirs=1 https://s3-us-west-2.amazonaws.com/fh-pi-holland-e/OriginalTCGAGTExData/combined_SEobjects/index.html
-wget --recursive -nH --cut-dirs=1 https://s3-us-west-2.amazonaws.com/fh-pi-holland-e/OriginalTCGAGTExData/SE_objects/index.html
+wget --recursive -nH --cut-dirs=1 https://s3-us-west-2.amazonaws.com/fh-pi-holland-e/OriginalTCGAGTExData/SE_objects/index.
+wget --recursive -nH --cut-dirs=1 https://s3-us-west-2.amazonaws.com/fh-pi-holland-e/OriginalTCGAGTExData/raw_counts/index.html
 ```
 
 #### Complete Data Download
