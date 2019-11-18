@@ -1,0 +1,166 @@
+---
+title: "Different annotation sources across pipelines"
+author: "Sonali Arora, Hamid Bolouri"
+date: "November 18, 2019"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+Each of the pipelines have used different annotation sources for gene quantification.
+GDC has used Gencode (v22/ hg38), Xena/Toil has used Gencode (v23/hg38), 
+Recount2 has used Gencode (v25/hg38) , MSKCC has used Gencode (v19/ hg19)
+whereas Piccolo has used illumina's iGenome's GTF file ( aligned to hg19)
+
+In this  vignette, we calculate sum of exon widths for each protein coding gene 
+from each of the different pipelines. We then perform principal component analysis
+on exons widths from each of the different pipelines.
+
+
+```{r }
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(rtracklayer)
+  library(GenomicFeatures)
+})
+
+
+mytxdbFunction <- function(gtf_file, result_file, tag =NA_character_){
+  # import as gtf
+  gtf = import(gtf_file)
+  gtf = gtf[gtf$type=="gene", ]
+  
+  # import as txdb
+  txdb = makeTxDbFromGFF(gtf_file, format= "gtf")
+  
+  # sum exons of every gene
+  ex_tx = exonsBy(txdb, by = "gene")
+  exon_width = sapply(ex_tx, function(x) sum(width(reduce(x))) )
+  
+  # get sum of gene 
+  gene = genes(txdb)
+  
+  if(!identical( gene$gene_id, names(exon_width))){
+    stop("incorrect genes being merged.")
+  }
+  
+  # get gene symbol for every gene.
+  goi = gtf[match( names(exon_width), gtf$gene_id), ]$gene_name
+  
+  # merge and write to file.
+  mat = cbind(geneName = goi, gene_id =names(exon_width), exon_width)
+  mat
+}
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData", "annotations")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data/de_analysis
+resdir = file.path(bigdir, "data", "annotation_sources")
+
+goi = read.delim(file.path(bigdir, "data", "tables", "Supp_Table_TCGA_Correlations_all_6_Datasets_log2_TPM.txt"), 
+                 header=T, stringsAsFactors = FALSE, row.names=1)
+
+
+xena = mytxdbFunction(file.path(s3_dir, "gencode.v23.annotation.gtf"), 
+                       file.path(resdir,"xena_gencode.v23.annotation.txt"))
+
+gdc = mytxdbFunction(file.path(s3_dir, "gencode.v22.annotation.gtf"), 
+                      file.path(resdir,"gdc_gencode.v22.annotation.txt"))
+
+recount2 = mytxdbFunction(file.path(s3_dir, "gencode.v25.annotation.gtf"), 
+                           file.path(resdir,"recount2_gencode.v25.annotation.txt"))
+
+mskcc= mytxdbFunction(file.path(s3_dir, "gencode.v19.annotation.gtf"),
+                      file.path(resdir, "mskcc_gencode.v19.annotation.txt"))
+
+# piccolo using illumina's GTF file 
+piccolo_txdb <- makeTxDbFromGFF( file.path(s3_dir, "illumina_genes.gtf"), format= "gtf")
+piccolo_exons = exonsBy(piccolo_txdb, by = "gene")
+exon_width = sapply(piccolo_exons, function(x) sum(width(reduce(x))) )
+piccolo_mat = cbind(geneName = names(piccolo_exons),  exon_width)
+
+# ensure same gene order for each file.
+piccolo = piccolo[match(goi, piccolo[,1]), ]
+xena = xena[match(goi, xena[,1]), ]
+recount2 = recount2[match(goi, recount2[,1]), ]
+gdc = gdc[match(goi, gdc[,1]), ]
+mskcc = mskcc[match(goi, mskcc[,1]), ]
+
+width_mat = cbind(piccolo = piccolo[,"exon_width"], 
+                  gdc = gdc[, "exon_width"], 
+                  mskcc = mskcc[, "exon_width"] , 
+                  xena = xena[, "exon_width"], 
+                  recount2 = recount2[, "exon_width"])
+rownames(width_mat) = piccolo[,1]
+
+# perform PCA analysis for exon width of all genes.
+pc1= prcomp(t(width_mat))
+percentVar <- (pc1$sdev^2 / sum( pc1$sdev^2 ) )*100
+percentVar= round(percentVar[1:2], 2)
+percentVar 
+
+pc_data= data.frame(PC1=pc1$x[,1], PC2=pc1$x[,2], 
+                    Project=c("Piccolo(hg19)", "GDC(hg38)",  "MSKCC(hg19)", "Xena/Toil(hg38)", "Recount2(hg38)"))
+
+pc_data$Project = factor(as.character(pc_data$Project), 
+   levels = c("GDC(hg38)", "Piccolo(hg19)", "MSKCC(hg19)", "Recount2(hg38)", "Xena/Toil(hg38)"))
+
+Project_cols =c("#A3A500" ,"#E76BF3","#00B0F6","grey", "orange" )
+
+
+library(ggplot2)
+library(grid)
+library(gridExtra)
+
+s1 =8  # size for points in PCA plot
+legend_pt_size =4
+plot_title_size = 25
+axis_text_size = 25
+axis_title_size=25
+legend_text_size=25
+spacing=0.5
+chosen_margin = c(0.5,1,0.5,1)# margins:top,right,bottom,left
+
+
+theme_sa <- theme_bw(base_family="Helvetica") +
+  theme(
+    plot.title = element_text(hjust=0, vjust=0, 
+                              lineheight=.8, face="bold", size=plot_title_size ),
+    plot.margin=unit(chosen_margin,"cm"), 
+    axis.text=element_text(size=axis_text_size),
+    axis.title=element_text(size=axis_title_size),
+    legend.text=element_text(size=legend_text_size),
+    legend.key.height = unit(spacing, "cm"),
+    #legend.position = "bottom",
+    legend.justification = 'left',
+    legend.title=element_blank() )
+
+p1 = ggplot(pc_data, aes(PC1, PC2, color=Project, shape = Project)) +
+  geom_point(size=s1) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) +
+  ggtitle("Exon width for all protein coding genes") +
+  scale_color_manual(name="Project", 
+                     breaks=levels(pc_data[,"Project"]), 
+                     values=Project_cols) +
+  scale_shape_manual(name="Project", 
+                     breaks=levels(pc_data[,"Project"]), 
+                     values=c(19, rep(17 , 2), rep(19, 3)))
+
+pdf(file.path(resdir, "annotations_pca_exon_width.pdf"), width = 7, height =10)
+print(p1)
+dev.off()
+
+width_mat = cbind( gene = rownames(width_mat), width_mat)
+write.table(width_mat, file.path(resdir, "Supp_table_annotations_exon_with_per_gene.txt"), 
+             sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+```
