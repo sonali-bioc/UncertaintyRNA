@@ -1,0 +1,573 @@
+---
+title: "Pathway Analysis for cancer types"
+author: "Sonali Arora, Hamid Bolouri"
+date: "November 18, 2019"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+
+
+
+## Pathway Analysis ( Over-representation analysis)
+
+In the previous vignette, we found differentially expressed genes (DEGs) using DESeq2. 
+In the below code chunk, we take those differentially expressed genes and perform a pathway
+over-representation analysis for REACTOME pathways using R/Bioconductor package clusterProfileR.
+
+```{r eval = FALSE}
+
+rm(list=ls())
+suppressPackageStartupMessages({
+  library(DOSE)
+  library(clusterProfiler)
+  library(ReactomePA)
+  library(org.Hs.eg.db)
+  library(DESeq2)
+  library(edgeR)
+  library(RColorBrewer)
+  library(pheatmap)
+  library(ggplot2)
+})
+
+getEntrezIdFromSymbol <- function(gene_symbol){
+  mapIds(org.Hs.eg.db,
+         keys=gene_symbol,
+         column="ENTREZID",
+         keytype="SYMBOL",
+         multiVals="first")
+}
+
+getSymbolFromEntrezId <- function(gene_id){
+  mapIds(org.Hs.eg.db,
+         keys=gene_id,
+         column="SYMBOL",
+         keytype="ENTREZID",
+         multiVals="first")
+}
+
+myEnrichmentFunction = function(fls, resdir){
+  
+  gene_list = read.delim(fls, header=T, stringsAsFactors = FALSE)[,1]
+  title = gsub(".txt", "", basename(fls))
+  
+  up_ids = getEntrezIdFromSymbol(unlist(gene_list))
+  reactome = enrichPathway(up_ids, organism = "human", pvalueCutoff = 0.05,
+                           pAdjustMethod = "BH",   minGSSize = 10,
+                           maxGSSize = 500, readable = FALSE)
+  
+  message(" No of genes: ", length(unique(gene_list)))
+  message("Reactome for up-reg genes=", nrow(reactome))
+ 
+  if(nrow(reactome)!=0){
+    r1 = as.data.frame(reactome)
+    gene_name= lapply(r1$geneID, function(y){
+      y = unlist(strsplit(y, "/"))
+      paste0(getSymbolFromEntrezId(y), collapse="/")
+    })
+    r1$gene_name = unlist(gene_name)
+    
+    write.table(r1,
+                file.path(resdir, paste0(title,"_Reactome_Pathway.txt")),
+                sep="\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+    
+  }
+  rm(reactome)
+}
+
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData", "raw_counts")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data/de_analysis
+resdir = file.path(bigdir, "data", "de_analysis")
+
+
+down_fls = list.files(pattern = "_down_reg_genes.txt", path = resdir, full.names=TRUE, recursive=TRUE)
+up_fls = list.files(pattern = "_up_reg_genes.txt", path = resdir, full.names=TRUE, recursive = TRUE)
+
+lapply(up_fls, function(x){
+  myEnrichmentFunction(x, resdir=  file.path(resdir, "pathway_analysis"))
+})
+
+lapply(down_fls, function(x){
+  message(x)
+  myEnrichmentFunction(x, resdir=  file.path(resdir, "pathway_analysis"))
+})
+
+```
+
+
+## Combined dotplots for each cancer comparison
+
+In the code section below, we create dotplots to visualize pathways over-represented in each cancer type 
+across all pipelines. This is included as a three panel supplemental figure in our manuscript.
+
+
+```{r eval=FALSE}
+rm(list=ls())
+library(ggplot2)
+
+
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData", "raw_counts")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data/de_analysis
+resdir = file.path(bigdir, "data", "de_analysis", "pathway_analysis")
+
+fls = list.files(pattern ="up_reg_genes_Reactome_Pathway.txt", recursive=T, 
+                 full.names=TRUE, path = resdir)
+
+parse_ratio <- function(ratio) {
+  gsize <- as.numeric(sub("/\\d+$", "", as.character(ratio)))
+  gcsize <- as.numeric(sub("^\\d+/", "", as.character(ratio)))
+  return(gsize/gcsize)
+}
+
+tag_lst = c("HER2_enriched_vs_basal_like_", 
+            "kirp_vs_kirc_", 
+            "lusc_vs_luad_")
+file_ending = "_deseq2_up_reg_genes_Reactome_Pathway.txt"
+
+lapply(tag_lst, function(tag){
+  message(tag)
+    small_fls = grep(tag, fls, value=T)
+    ppl_lst = c("GDC", "MSKCC", "Piccolo", "Recount2", "Xena/Toil")
+    
+    bigdf = lapply(small_fls, function(x){
+      df  = read.delim(x, header=T, stringsAsFactors = FALSE)
+      pipeline = gsub(tag, "", basename(x))
+      pipeline = gsub(file_ending, "", pipeline)
+      df$pipeline = rep(pipeline, nrow(df))
+      df$GeneRatio <- parse_ratio(df$GeneRatio)
+      df[, c("Description", "GeneRatio", "p.adjust", "pipeline")]
+    })
+    
+    bigdf = do.call(rbind, bigdf)
+    
+    bigdf$pipeline = gsub("gdc", "GDC", bigdf$pipeline)
+    bigdf$pipeline = gsub("mskcc", "MSKCC", bigdf$pipeline)
+    bigdf$pipeline = gsub("XENA", "Xena/Toil", bigdf$pipeline)
+    bigdf$pipeline = gsub("RECOUNT2", "Recount2", bigdf$pipeline)
+    
+    # edit long text for one pathway to ensure it fits on pdf.
+    long_text = "Regulation of Insulin-like Growth Factor (IGF) transport and uptake by Insulin-like Growth Factor Binding Proteins (IGFBPs)"
+    small_text = "Regulation of Insulin-like Growth Factor (IGF) transport"
+    long1 = which(bigdf$Description ==long_text)
+    if(length(long1)!=0){
+      bigdf$Description[long1]= small_text
+    }
+    
+    test = as.data.frame(table(bigdf$Description))
+    test = test[order(test[,2], decreasing=T), ]
+    
+    # print only 25 pathways.
+    n = 25
+    if(nrow(test)< 25){
+      n = nrow(test)
+    }
+    test = tail(test, n)
+    test[,1] = as.character(test[,1])
+    idx = sapply(test[,1], function(x) which(bigdf$Description==x))
+    smalldf = bigdf[ unlist(idx), ]
+    
+    smalldf$Description = factor(smalldf$Description, levels = test[,1] )
+    p2 = ggplot(smalldf, aes(x=pipeline, y=Description, size=GeneRatio, color=p.adjust)) +
+      geom_point() + scale_color_gradient(low="red", high="blue") + ylab("") +
+      theme_bw()+  xlab("") + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    
+    pdf(file.path(resdir, paste0("Combined_dotplot_", tag, gsub(".txt", ".pdf", file_ending))), width =7, height = 6)
+    print(p2)
+    dev.off()
+})
+
+```
+
+
+## Creating files as input for GSEA
+
+In addition to over-represented pathways ( using DEGs), we also decided to do a Gene Set Enrichment Analysis (GSEA)
+using log2(tpm+1) counts from each pipeline. 
+In the below section, we create input files for GSEA. 
+
+### Breast
+
+```{r eval = FALSE}
+rm(list=ls())
+library(SummarizedExperiment)
+s3_dir = "~/HollandLabShared/Sonali/paper_with_Hamid_Siobhan/Rstudio/OriginalTCGAGTExData/"
+
+# folder where S3BUCKET data and github directory are stored. eg: ~/Downloads
+bigdir = dirname(getwd())
+# github directory eg: ~/Downloads/UncertaintyRNA
+git_dir = file.path(bigdir,  "UncertaintyRNA")
+# S3 bucket directory eg: ~/Downloads/OriginalTCGAGTExData
+s3_dir = file.path(bigdir,  "OriginalTCGAGTExData")
+
+# when you run our RMD files, all results will be stored here. 
+# This will essentially remake the "data" subfolder from github repo.
+# eg:~/Downloads/data/de_analysis
+resdir = file.path(bigdir, "data", "gsea_analysis")
+gsea_dir = file.path(bigdir, "data", "gsea_analysis")
+
+tcga_gdc <- get(load( file.path( s3_dir, "SE_objects","tcga_gdc_log2_TPM.RData")))
+tcga_mskcc_norm <- get(load( file.path( s3_dir, "SE_objects", "tcga_mskcc_norm_log2_TPM.RData")))
+tcga_mskcc_batch <- get(load( file.path( s3_dir, "SE_objects", "tcga_mskcc_batch_log2_TPM.RData")))
+tcga_recount2 <- get(load( file.path( s3_dir, "SE_objects", "tcga_recount2_log2_TPM.RData")))
+tcga_xena <- get(load( file.path( s3_dir, "SE_objects", "tcga_xena_log2_TPM.RData")))
+tcga_piccolo <- get(load( file.path( s3_dir, "SE_objects","tcga_piccolo_log2_TPM.RData")))
+
+# sanity check - check rows and columns are identical for easier subsetting ahead
+
+identical( rownames(tcga_gdc), rownames(tcga_mskcc_batch))
+identical( rownames(tcga_gdc), rownames(tcga_mskcc_norm))
+identical( rownames(tcga_gdc), rownames(tcga_piccolo))
+identical( rownames(tcga_gdc), rownames(tcga_recount2))
+identical( rownames(tcga_gdc), rownames(tcga_xena))
+
+identical( colnames(tcga_gdc), colnames(tcga_mskcc_batch))
+identical( colnames(tcga_gdc), colnames(tcga_mskcc_norm))
+identical( colnames(tcga_gdc), colnames(tcga_piccolo))
+identical( colnames(tcga_gdc), colnames(tcga_recount2))
+identical( colnames(tcga_gdc), colnames(tcga_xena))
+
+tag = "Breast"
+
+goi= read.delim(file.path(s3_dir, "de_goi.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+basal_like_samples= read.delim(file.path(s3_dir,"brca_basal_like_samples.txt"), header=TRUE, stringsAsFactors = FALSE )[,1]
+HER2_enriched_samples= read.delim(file.path(s3_dir,"brca_HER2_enriched_samples.txt"), header=TRUE, stringsAsFactors = FALSE )[,1]
+
+idx1  = match( basal_like_samples, substr(colnames(tcga_gdc), 1, 12))
+idx2 = match(HER2_enriched_samples, substr(colnames(tcga_gdc), 1, 12))
+row_idx = match(goi, rownames(tcga_gdc))
+
+table(is.na(idx1))
+table(is.na(idx2))
+table(is.na(row_idx))
+
+her2_gdc = assay(tcga_gdc[goi, c(idx1, idx2)])
+her2_xena = assay(tcga_xena[goi, c(idx1, idx2)])
+her2_recount2 = assay(tcga_recount2[goi, c(idx1, idx2)])
+her2_piccolo = assay(tcga_piccolo[ goi, c(idx1, idx2)])
+her2_mskcc_norm = assay(tcga_mskcc_norm[goi, c(idx1,idx2)])
+her2_mskcc_batch = assay(tcga_mskcc_batch[goi, c(idx1, idx2)])
+
+map = data.frame(NAME = rownames(her2_gdc), DESCRIPTION = rep(NA, nrow(her2_gdc)))
+her2_gdc = cbind(map, her2_gdc)
+her2_xena = cbind(map, her2_xena)
+her2_recount2 = cbind(map, her2_recount2)
+her2_piccolo = cbind(map, her2_piccolo)
+her2_mskcc_norm = cbind(map, her2_mskcc_norm)
+her2_mskcc_batch = cbind(map, her2_mskcc_batch)
+
+write.table(her2_gdc, file.path(gsea_dir, paste0("input_", tag, "_gdc_log2_tpm.txt")), 
+            sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(her2_xena, file.path(gsea_dir, paste0("input_", tag, "_XENA_log2_tpm.txt")), 
+            sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(her2_recount2, file.path(gsea_dir, paste0("input_", tag, "_Recount2_log2_tpm.txt")), 
+            sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(her2_piccolo, file.path(gsea_dir, paste0("input_", tag, "_piccolo_log2_tpm.txt")), 
+            sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(her2_mskcc_norm, file.path(gsea_dir, paste0("input_", tag, "_mskcc_norm_log2_tpm.txt")), 
+            sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(her2_mskcc_batch, file.path(gsea_dir, paste0("input_", tag, "_mskcc_batch_log2_tpm.txt")), 
+            sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+
+tag = "Lung"
+
+goi= read.delim(file.path(s3_dir, "de_goi.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+luad_samples= read.delim(file.path(s3_dir,"luad_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+lusc_samples= read.delim(file.path(s3_dir,"lusc_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+
+idx1  = match( luad_samples, colnames(tcga_gdc))
+idx2 = match(lusc_samples, colnames(tcga_gdc))
+row_idx = match(goi, rownames(tcga_gdc))
+
+table(is.na(idx1))
+table(is.na(idx2))
+table(is.na(row_idx))
+
+lung_gdc = assay(tcga_gdc[goi, c(idx1, idx2)])
+lung_xena = assay(tcga_xena[goi, c(idx1, idx2)])
+lung_recount2 = assay(tcga_recount2[goi, c(idx1, idx2)])
+lung_piccolo = assay(tcga_piccolo[ goi, c(idx1, idx2)])
+lung_mskcc_norm = assay(tcga_mskcc_norm[goi, c(idx1,idx2)])
+lung_mskcc_batch = assay(tcga_mskcc_batch[goi, c(idx1, idx2)])
+
+map = data.frame(NAME = rownames(lung_gdc), DESCRIPTION = rep(NA, nrow(lung_gdc)))
+lung_gdc = cbind(map, lung_gdc)
+lung_xena = cbind(map, lung_xena)
+lung_recount2 = cbind(map, lung_recount2)
+lung_piccolo = cbind(map, lung_piccolo)
+lung_mskcc_norm = cbind(map, lung_mskcc_norm)
+lung_mskcc_batch = cbind(map, lung_mskcc_batch)
+
+write.table(lung_gdc, file.path(gsea_dir, paste0("input_", tag, "_gdc_log2_tpm.txt")), 
+            sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(lung_xena, file.path(gsea_dir, paste0("input_", tag, "_XENA_log2_tpm.txt")), 
+            sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(lung_recount2, file.path(gsea_dir, paste0("input_", tag, "_Recount2_log2_tpm.txt")), 
+            sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(lung_piccolo, file.path(gsea_dir, paste0("input_", tag, "_piccolo_log2_tpm.txt")), 
+            sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(lung_mskcc_norm, file.path(gsea_dir, paste0("input_", tag, "_mskcc_norm_log2_tpm.txt")), 
+            sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(lung_mskcc_batch, file.path(gsea_dir, paste0("input_", tag, "_mskcc_batch_log2_tpm.txt")), 
+            sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+
+
+tag = "Kidney"
+
+goi= read.delim(file.path(s3_dir, "de_goi.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+kirc_samples= read.delim(file.path(resdir,"kirc_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+kirp_samples= read.delim(file.path(resdir,"kirp_samples.txt"), header=FALSE, stringsAsFactors = FALSE )[,1]
+
+idx1  = match( kirp_samples, colnames(tcga_gdc))
+idx2 = match(kirc_samples, colnames(tcga_gdc))
+row_idx = match(goi, rownames(tcga_gdc))
+
+table(is.na(idx1))
+table(is.na(idx2))
+table(is.na(row_idx))
+
+kidney_gdc = assay(tcga_gdc[goi, c(idx1, idx2)])
+kidney_xena = assay(tcga_xena[goi, c(idx1, idx2)])
+kidney_recount2 = assay(tcga_recount2[goi, c(idx1, idx2)])
+kidney_piccolo = assay(tcga_piccolo[ goi, c(idx1, idx2)])
+kidney_mskcc_norm = assay(tcga_mskcc_norm[goi, c(idx1,idx2)])
+kidney_mskcc_batch = assay(tcga_mskcc_batch[goi, c(idx1, idx2)])
+
+map = data.frame(NAME = rownames(kidney_gdc), DESCRIPTION = rep(NA, nrow(kidney_gdc)))
+kidney_gdc = cbind(map, kidney_gdc)
+kidney_xena = cbind(map, kidney_xena)
+kidney_recount2 = cbind(map, kidney_recount2)
+kidney_piccolo = cbind(map, kidney_piccolo)
+kidney_mskcc_norm = cbind(map, kidney_mskcc_norm)
+kidney_mskcc_batch = cbind(map, kidney_mskcc_batch)
+
+write.table(kidney_gdc, file.path(gsea_dir, paste0("input_", tag, "_gdc_log2_tpm.txt")), 
+            sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(kidney_xena, file.path(gsea_dir, paste0("input_", tag, "_XENA_log2_tpm.txt")), 
+            sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(kidney_recount2, file.path(gsea_dir, paste0("input_", tag, "_Recount2_log2_tpm.txt")), 
+            sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(kidney_piccolo, file.path(gsea_dir, paste0("input_", tag, "_piccolo_log2_tpm.txt")), 
+            sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(kidney_mskcc_norm, file.path(gsea_dir, paste0("input_", tag, "_mskcc_norm_log2_tpm.txt")), 
+            sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+write.table(kidney_mskcc_batch, file.path(gsea_dir, paste0("input_", tag, "_mskcc_batch_log2_tpm.txt")), 
+            sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+# create a cls files fir GSEA
+
+kidney_cls = c(rep( "KIRP", length(kirp_samples) ), rep("KIRC", length(kirc_samples)))
+write.table(t(kidney_cls), file.path(gsea_dir, "kidney_cls.cls"),
+            sep = " ", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+
+lung_cls = c(rep( "LUAD", length(luad_samples) ), rep("LUSC", length(lusc_samples)))
+write.table(t(lung_cls), file.path(gsea_dir, "lung_cls.cls"),
+            sep = " ", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+breast_cls = c(rep( "Basal", length(basal_like_samples) ), rep("her2e", length(HER2_enriched_samples)))
+write.table(t(breast_cls), file.path(gsea_dir, "Breast_cls.cls"),
+            sep = " ", quote=FALSE, row.names=FALSE, col.names=FALSE)
+```
+
+### Supplemental Tables for GSEA analysis
+
+```{r eval=FALSE}
+
+rm(list=ls())
+library(UpSetR)
+gsea_dir = "~/HollandLabShared/Sonali/paper_with_Hamid_Siobhan/de_analysis/gsea_analysis"
+setwd(gsea_dir)
+fls = list.files(pattern = "_Basal_*")
+fls = fls[ grep(".xls", fls)]
+fls
+breast_bigdf = lapply(fls, function(x) read.delim(x, header=T, stringsAsFactors=FALSE))
+breast_pathways = lapply(breast_bigdf, function(x) x[which(x$FDR.q.val < 0.25), -c(2,3)] )
+pipeline = c( rep("GDC", nrow(breast_pathways[[1]])), 
+              rep("MSKCC Batch", nrow(breast_pathways[[2]])), 
+              rep("MSKCC Norm", nrow(breast_pathways[[3]])), 
+              rep("Piccolo", nrow(breast_pathways[[4]])), 
+              rep("Recount2", nrow(breast_pathways[[5]])), 
+              rep("Xena/Toil", nrow(breast_pathways[[6]]))
+              )
+breast_pathways = do.call(rbind, breast_pathways)
+breast_pathways = cbind( pipeline , breast_pathways)
+
+
+fls = list.files(pattern = "_KIRC_*")
+fls = fls[ grep(".xls", fls)]
+fls
+kidney_bigdf = lapply(fls, function(x) read.delim(x, header=T, stringsAsFactors=FALSE))
+kidney_pathways = lapply(kidney_bigdf, function(x) x[which(x$FDR.q.val < 0.25),  -c(2,3)] )
+pipeline = c( rep("GDC", nrow(kidney_pathways[[1]])), 
+              rep("MSKCC Batch", nrow(kidney_pathways[[2]])), 
+              rep("MSKCC Norm", nrow(kidney_pathways[[3]])), 
+              rep("Piccolo", nrow(kidney_pathways[[4]])), 
+              rep("Recount2", nrow(kidney_pathways[[5]])), 
+              rep("Xena/Toil", nrow(kidney_pathways[[6]]))
+)
+kidney_pathways = do.call(rbind, kidney_pathways)
+kidney_pathways = cbind( pipeline , kidney_pathways)
+
+fls = list.files(pattern = "_LUAD_*")
+fls = fls[ grep(".xls", fls)]
+fls
+lung_bigdf = lapply(fls, function(x) read.delim(x, header=T, stringsAsFactors=FALSE))
+lung_pathways = lapply(lung_bigdf, function(x) x[which(x$FDR.q.val < 0.25),  -c(2,3)] )
+pipeline = c( rep("GDC", nrow(lung_pathways[[1]])), 
+              rep("MSKCC Batch", nrow(lung_pathways[[2]])), 
+              rep("MSKCC Norm", nrow(lung_pathways[[3]])), 
+              rep("Piccolo", nrow(lung_pathways[[4]])), 
+              rep("Recount2", nrow(lung_pathways[[5]])), 
+              rep("Xena/Toil", nrow(lung_pathways[[6]]))
+)
+lung_pathways = do.call(rbind, lung_pathways)
+lung_pathways = cbind( pipeline , lung_pathways)
+
+table(lung_pathways[,1])
+table(kidney_pathways[,1])
+table(breast_pathways[,1])
+
+write.table(lung_pathways, file.path(gsea_dir, "supp_table_gsea_lung.txt"), 
+           sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+write.table(kidney_pathways, file.path(gsea_dir, "supp_table_gsea_Kidney.txt"), 
+           sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+
+write.table(breast_pathways, file.path(gsea_dir, "supp_table_gsea_Breast.txt"), 
+           sep = "\t", quote=FALSE, row.names=FALSE, col.names=TRUE)
+```
+
+## Barplots 
+
+In the code below, we create side-by-side barplots to visualize DEGs and pathways found across all pipelines.
+These are included as supplemental figures in our manuscripts.
+
+```{r eval =FALSE}
+library(ggplot2)
+axis_text_size = 25
+axis_title_size=25
+legend_text_size=25
+
+
+path_levs = c( "Pathway Found by all 5 pipelines", "Pathway Not Found by all 5 pipelines")
+basal_df <- data.frame(dose=path_levs,
+                       len=c( 17, 22), 
+                       analysis=rep("Breast", 2))
+luad_df <- data.frame(dose=path_levs,
+                      len=c( 52, 42), 
+                      analysis=rep("Lung", 2))
+kirc_df <- data.frame(dose=path_levs,
+                      len=c(193, 107), 
+                      analysis=rep("Kidney", 2))
+bar_df = rbind(basal_df, luad_df, kirc_df)
+bar_df$dose = factor(bar_df$dose, levels = path_levs)
+
+
+p5 =ggplot(data=bar_df, aes(x=analysis, y=len, fill=dose)) +
+  geom_bar(stat="identity", position=position_dodge(), width = 0.8)+
+  geom_text(aes(label=len), vjust=1.6, color="black",
+            position = position_dodge(0.9), size=10)+
+  scale_fill_brewer(palette="Dark2")+
+  ylab("No of enriched pathways") + xlab("") +
+  theme_bw(base_family="Helvetica") + 
+  theme(legend.title = element_blank(), 
+        legend.position="bottom", legend.direction="vertical", 
+        legend.text = element_text(size = legend_text_size), 
+        axis.text.x = element_text(colour = "black", size=axis_text_size), 
+        axis.text.y = element_text(colour = "black", size=axis_text_size), 
+        axis.title.x = element_blank(), 
+        axis.title = element_text(size= axis_title_size)) 
+
+
+# over-represented pathways
+path_levs = c( "Pathways Found by all 5 pipelines", "Pathways Not Found by all 5 pipelines")
+basal_df <- data.frame(dose=path_levs,
+                       len=c( 8, 8), 
+                       analysis=rep("Breast", 2))
+luad_df <- data.frame(dose=path_levs,
+                      len=c( 37, 10), 
+                      analysis=rep("Lung", 2))
+kirc_df <- data.frame(dose=path_levs,
+                      len=c(58, 20), 
+                      analysis=rep("Kidney", 2))
+bar_df = rbind(basal_df, luad_df, kirc_df)
+bar_df$dose = factor(bar_df$dose, levels = path_levs)
+
+
+p6 =ggplot(data=bar_df, aes(x=analysis, y=len, fill=dose)) +
+  geom_bar(stat="identity", position=position_dodge(), width = 0.8)+
+  geom_text(aes(label=len), vjust=1.6, color="black",
+            position = position_dodge(0.9), size=10)+
+  scale_fill_brewer(palette="Dark2")+
+  ylab("No of over-represented pathways") + xlab("") +
+  theme_bw(base_family="Helvetica") + 
+  theme(legend.title = element_blank(), 
+        legend.position="bottom", legend.direction="vertical", 
+        legend.text = element_text(size = legend_text_size), 
+        axis.text.x = element_text(colour = "black", size=axis_text_size), 
+        axis.text.y = element_text(colour = "black", size=axis_text_size), 
+        axis.title.x = element_blank(), 
+        axis.title = element_text(size= axis_title_size)) 
+
+
+
+# differentially expressed genes. 
+path_levs = c( "DEGs Found by all 5 pipelines", "DEGs Not Found by all 5 pipelines")
+
+basal_df <- data.frame(dose=path_levs,
+                       len=c( 802, 701), 
+                       analysis=rep("Breast", 2))
+
+luad_df <- data.frame(dose=path_levs,
+                      len=c( 1806, 387), 
+                      analysis=rep("Lung", 2))
+
+kirc_df <- data.frame(dose=path_levs,
+                      len=c(2020, 479), 
+                      analysis=rep("Kidney", 2))
+
+bar_df = rbind(basal_df, luad_df, kirc_df)
+bar_df$dose = factor(bar_df$dose, levels = path_levs)
+
+p7 =ggplot(data=bar_df, aes(x=analysis, y=len, fill=dose)) +
+  geom_bar(stat="identity", position=position_dodge(), width = 0.8)+
+  geom_text(aes(label=len), vjust=1.6, color="black",
+            position = position_dodge(0.9), size=10)+
+  scale_fill_brewer(palette="Dark2")+
+  ylab("No of differentially expressed genes") + xlab("") +
+  theme_bw(base_family="Helvetica") + 
+  theme(legend.title = element_blank(), 
+        legend.position="bottom", legend.direction="vertical", 
+        legend.text = element_text(size = legend_text_size), 
+        axis.text.x = element_text(colour = "black", size=axis_text_size), 
+        axis.text.y = element_text(colour = "black", size=axis_text_size), 
+        axis.title.x = element_blank(), 
+        axis.title = element_text(size= axis_title_size)) 
+
+pdf("side_by_side_barplots.pdf", width = 7, height = 7)
+print(p5)
+print(p6)
+print(p7)
+dev.off()
+```
+
