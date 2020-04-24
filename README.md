@@ -11,8 +11,7 @@ output:
 ## Introduction
 
 This github repository contains code to reproduce the analysis in our paper 
-"Uncertainty in RNA-seq gene expression data". A copy of the paper can be 
-found [here](https://www.biorxiv.org/content/early/2018/12/18/445601). 
+"Variability in estimated gene expression among commonly used RNA-seq pipelines". The paper is now published at Scientific Reports [here](https://www.nature.com/articles/s41598-020-59516-z). 
 
 ### Additional Figures
 
