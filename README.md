@@ -84,18 +84,19 @@ If you would like to download all the data associated with this Paper, it is
 recommended to download the data in chunks using the following commands 
 
 ```{}
-wget --recursive -nH --cut-dirs=1 https://s3-us-west-2.amazonaws.com/fh-pi-holland-e/OriginalTCGAGTExData/annotations/index.html
-wget --recursive -nH --cut-dirs=1 https://s3-us-west-2.amazonaws.com/fh-pi-holland-e/OriginalTCGAGTExData/datasource_XENA/index.html
-wget --recursive -nH --cut-dirs=1 https://s3-us-west-2.amazonaws.com/fh-pi-holland-e/OriginalTCGAGTExData/datasource_GDC/index.html
-wget --recursive -nH --cut-dirs=1 https://s3-us-west-2.amazonaws.com/fh-pi-holland-e/OriginalTCGAGTExData/datasource_GTEX_v6/index.html
-wget --recursive -nH --cut-dirs=1 https://s3-us-west-2.amazonaws.com/fh-pi-holland-e/OriginalTCGAGTExData/datasource_MSKCC/index.html
-wget --recursive -nH --cut-dirs=1 https://s3-us-west-2.amazonaws.com/fh-pi-holland-e/OriginalTCGAGTExData/datasource_PICCOLO/index.html
-wget --recursive -nH --cut-dirs=1 https://s3-us-west-2.amazonaws.com/fh-pi-holland-e/OriginalTCGAGTExData/datasource_RECOUNT2_GTEX/index.html
-wget --recursive -nH --cut-dirs=1 https://s3-us-west-2.amazonaws.com/fh-pi-holland-e/OriginalTCGAGTExData/datasource_RECOUNT2_TCGA/index.html
+wget --recursive -nH --cut-dirs=1  https://fh-pi-holland-e-eco-public.s3.us-west-2.amazonaws.com/OriginalTCGAGTExData/annotations/index.html
+wget --recursive -nH --cut-dirs=1  https://fh-pi-holland-e-eco-public.s3.us-west-2.amazonaws.com/OriginalTCGAGTExData/datasource_XENA/index.html
+wget --recursive -nH --cut-dirs=1  https://fh-pi-holland-e-eco-public.s3.us-west-2.amazonaws.com/OriginalTCGAGTExData/datasource_GDC/index.html
+wget --recursive -nH --cut-dirs=1  https://fh-pi-holland-e-eco-public.s3.us-west-2.amazonaws.com/OriginalTCGAGTExData/datasource_GTEX_v6/index.html
+wget --recursive -nH --cut-dirs=1  https://fh-pi-holland-e-eco-public.s3.us-west-2.amazonaws.com/OriginalTCGAGTExData/datasource_MSKCC/index.html
+wget --recursive -nH --cut-dirs=1  https://fh-pi-holland-e-eco-public.s3.us-west-2.amazonaws.com/OriginalTCGAGTExData/datasource_PICCOLO/index.html
+wget --recursive -nH --cut-dirs=1  https://fh-pi-holland-e-eco-public.s3.us-west-2.amazonaws.com/OriginalTCGAGTExData/datasource_RECOUNT2_GTEX/index.html
+wget --recursive -nH --cut-dirs=1  https://fh-pi-holland-e-eco-public.s3.us-west-2.amazonaws.com/OriginalTCGAGTExData/datasource_RECOUNT2_TCGA/index.html
 
-wget --recursive -nH --cut-dirs=1 https://s3-us-west-2.amazonaws.com/fh-pi-holland-e/OriginalTCGAGTExData/combined_SEobjects/index.html
-wget --recursive -nH --cut-dirs=1 https://s3-us-west-2.amazonaws.com/fh-pi-holland-e/OriginalTCGAGTExData/SE_objects/index.
-wget --recursive -nH --cut-dirs=1 https://s3-us-west-2.amazonaws.com/fh-pi-holland-e/OriginalTCGAGTExData/raw_counts/index.html
+wget --recursive -nH --cut-dirs=1  https://fh-pi-holland-e-eco-public.s3.us-west-2.amazonaws.com/OriginalTCGAGTExData/combined_SEobjects/index.html
+wget --recursive -nH --cut-dirs=1  https://fh-pi-holland-e-eco-public.s3.us-west-2.amazonaws.com/OriginalTCGAGTExData/SE_objects/index.
+wget --recursive -nH --cut-dirs=1  https://fh-pi-holland-e-eco-public.s3.us-west-2.amazonaws.com/OriginalTCGAGTExData/raw_counts/index.html
+
 ```
 
 #### Complete Data Download
