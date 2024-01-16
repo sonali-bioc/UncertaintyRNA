@@ -75,7 +75,7 @@ one sub-folder "SE_objects" and its contents will be downloaded to it.
 
 
 ```{}
-wget --recursive -nH --cut-dirs=1 https://s3-us-west-2.amazonaws.com/fh-pi-holland-e/OriginalTCGAGTExData/SE_objects/index.html
+wget --recursive -nH --cut-dirs=1 https://fh-pi-holland-e-eco-public.s3.us-west-2.amazonaws.com/OriginalTCGAGTExData/SE_objects/index.html
 ```
 
 #### Download complete data in chunks
